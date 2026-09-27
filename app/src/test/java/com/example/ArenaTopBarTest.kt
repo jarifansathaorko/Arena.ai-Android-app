@@ -6,7 +6,6 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import com.example.ui.components.ArenaTopBar
 import org.junit.Assert.*
 import org.junit.Rule
@@ -16,8 +15,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * Compose UI tests for the top navigation bar: chips render, selection
- * follows the URL, and taps route to the right callbacks.
+ * Compose UI tests for the slim top bar: navigation buttons, URL pill, and
+ * the overflow menu that hosts reload / desktop toggle / tools.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -30,13 +29,12 @@ class ArenaTopBarTest {
         currentUrl: String = "https://arena.ai/",
         canGoBack: Boolean = false,
         canGoForward: Boolean = false,
-        onNavigateToUrl: (String) -> Unit = {},
-        onOpenBattleTracker: () -> Unit = {},
-        onOpenPrompts: () -> Unit = {},
         onNavigateBack: () -> Unit = {},
         onNavigateForward: () -> Unit = {},
         onReload: () -> Unit = {},
         onToggleDesktop: () -> Unit = {},
+        onOpenPrompts: () -> Unit = {},
+        onOpenBattleTracker: () -> Unit = {},
         onOpenSettings: () -> Unit = {}
     ) {
         composeRule.setContent {
@@ -53,46 +51,96 @@ class ArenaTopBarTest {
                 onToggleDesktop = onToggleDesktop,
                 onOpenPrompts = onOpenPrompts,
                 onOpenBattleTracker = onOpenBattleTracker,
-                onOpenSettings = onOpenSettings,
-                onNavigateToUrl = onNavigateToUrl
+                onOpenSettings = onOpenSettings
             )
         }
     }
 
+    private fun openOverflowMenu() {
+        composeRule.onNodeWithTag("overflow_menu_button")
+            .assertIsDisplayed()
+            .performClick()
+    }
+
     @Test
-    fun allQuickChips_areDisplayed() {
+    fun topBar_showsNavButtonsAndHost() {
         setContent()
-        // performScrollTo() forces composition inside the LazyRow so this
-        // holds even on narrow test viewports.
-        composeRule.onNodeWithTag("battle_nav_chip").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("leaderboard_nav_chip").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("history_nav_chip").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("battle_log_nav_chip").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("prompts_lib_nav_chip").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("nav_back_button").assertIsDisplayed()
+        composeRule.onNodeWithTag("nav_forward_button").assertIsDisplayed()
+        composeRule.onNodeWithTag("overflow_menu_button").assertIsDisplayed()
+        composeRule.onNodeWithText("arena.ai").assertIsDisplayed()
     }
 
     @Test
-    fun leaderboardChip_navigatesToLeaderboard() {
-        var navigated: String? = null
-        setContent(onNavigateToUrl = { navigated = it })
-        composeRule.onNodeWithTag("leaderboard_nav_chip").performClick()
-        assertEquals("https://arena.ai/leaderboard", navigated)
+    fun overflowMenu_exposesSecondaryActions() {
+        setContent()
+        openOverflowMenu()
+        composeRule.onNodeWithTag("reload_button").assertIsDisplayed()
+        composeRule.onNodeWithTag("desktop_toggle_button").assertIsDisplayed()
+        composeRule.onNodeWithTag("prompts_button").assertIsDisplayed()
+        composeRule.onNodeWithTag("settings_button").assertIsDisplayed()
     }
 
     @Test
-    fun battleLogChip_opensTracker() {
-        var opened = false
-        setContent(onOpenBattleTracker = { opened = true })
-        composeRule.onNodeWithTag("battle_log_nav_chip").performClick()
-        assertTrue(opened)
+    fun reloadMenuItem_firesCallbackAndDismisses() {
+        var reloaded = false
+        setContent(onReload = { reloaded = true })
+        openOverflowMenu()
+        composeRule.onNodeWithTag("reload_button").performClick()
+        assertTrue(reloaded)
+        composeRule.onNodeWithTag("reload_button").assertDoesNotExist()
     }
 
     @Test
-    fun promptsChip_opensPrompts() {
+    fun promptsMenuItem_opensPrompts() {
         var opened = false
         setContent(onOpenPrompts = { opened = true })
-        composeRule.onNodeWithTag("prompts_lib_nav_chip").performClick()
+        openOverflowMenu()
+        composeRule.onNodeWithTag("prompts_button").performClick()
         assertTrue(opened)
+    }
+
+    @Test
+    fun desktopToggleMenuItem_firesCallback() {
+        var toggled = false
+        setContent(onToggleDesktop = { toggled = true })
+        openOverflowMenu()
+        composeRule.onNodeWithTag("desktop_toggle_button").performClick()
+        assertTrue(toggled)
+    }
+
+    @Test
+    fun settingsMenuItem_opensSettings() {
+        var opened = false
+        setContent(onOpenSettings = { opened = true })
+        openOverflowMenu()
+        composeRule.onNodeWithTag("settings_button").performClick()
+        assertTrue(opened)
+    }
+
+    @Test
+    fun battleLogMenuItem_opensTracker() {
+        var opened = false
+        setContent(onOpenBattleTracker = { opened = true })
+        openOverflowMenu()
+        composeRule.onNodeWithTag("battle_log_menu_item").performClick()
+        assertTrue(opened)
+    }
+
+    @Test
+    fun copyLinkMenuItem_dismissesWithoutCrashing() {
+        setContent()
+        openOverflowMenu()
+        composeRule.onNodeWithTag("copy_link_menu_item").performClick()
+        composeRule.onNodeWithTag("copy_link_menu_item").assertDoesNotExist()
+    }
+
+    @Test
+    fun openBrowserMenuItem_dismissesWithoutCrashing() {
+        setContent()
+        openOverflowMenu()
+        composeRule.onNodeWithTag("open_browser_menu_item").performClick()
+        composeRule.onNodeWithTag("open_browser_menu_item").assertDoesNotExist()
     }
 
     @Test
@@ -107,11 +155,5 @@ class ArenaTopBarTest {
         setContent(canGoBack = true, onNavigateBack = { backed = true })
         composeRule.onNodeWithTag("nav_back_button").performClick()
         assertTrue(backed)
-    }
-
-    @Test
-    fun historyChip_labelVisibleOnHistoryPage() {
-        setContent(currentUrl = "https://arena.ai/history/search")
-        composeRule.onNodeWithText("History").assertIsDisplayed()
     }
 }

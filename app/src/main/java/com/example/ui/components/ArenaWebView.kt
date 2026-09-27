@@ -16,7 +16,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.*
@@ -231,6 +234,9 @@ fun ArenaWebView(
                             if (request?.isForMainFrame == true) {
                                 hasError = true
                                 errorMessage = error?.description?.toString() ?: "Failed to connect to Arena"
+                                // Push progress to done so the loading pill hides
+                                // underneath the error overlay.
+                                onProgressChange(1f)
                             }
                         }
 
@@ -277,6 +283,7 @@ fun ArenaWebView(
                                     "Arena's page renderer crashed. Your data is safe — tap retry to reload."
                                 onCanGoBackChange(false)
                                 onCanGoForwardChange(false)
+                                onProgressChange(1f)
                             } else {
                                 // System killed the renderer for resources:
                                 // in-place reload is safe here.
@@ -344,42 +351,80 @@ fun ArenaWebView(
                     .testTag("webview_error_overlay"),
                 contentAlignment = Alignment.Center
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                    modifier = Modifier.padding(24.dp)
+                Card(
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                    ),
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .widthIn(max = 380.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.WifiOff,
-                        contentDescription = "Connection Error",
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(64.dp)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Unable to connect to Arena.ai",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = if (errorMessage.isNotBlank()) errorMessage else "Please check your internet connection and try again.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(24.dp))
-                    Button(
-                        onClick = {
-                            hasError = false
-                            webViewRef?.reload()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = ArenaPrimary),
-                        modifier = Modifier.testTag("webview_retry_button")
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(28.dp)
                     ) {
-                        Icon(imageVector = Icons.Default.Refresh, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Retry Connection")
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
+                            modifier = Modifier.size(88.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.WifiOff,
+                                    contentDescription = "Connection Error",
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(40.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Unable to connect to Arena.ai",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = if (errorMessage.isNotBlank()) errorMessage else "Please check your internet connection and try again.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Button(
+                            onClick = {
+                                hasError = false
+                                webViewRef?.reload()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = ArenaPrimary),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("webview_retry_button")
+                        ) {
+                            Icon(imageVector = Icons.Default.Refresh, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Retry Connection")
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = {
+                                try {
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW, Uri.parse(currentUrl))
+                                    )
+                                } catch (_: Exception) {
+                                    // No browser available; stay on the error card.
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("webview_open_browser_button")
+                        ) {
+                            Icon(imageVector = Icons.Default.OpenInBrowser, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Open in Browser")
+                        }
                     }
                 }
             }

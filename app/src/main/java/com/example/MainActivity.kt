@@ -10,6 +10,7 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -96,8 +97,11 @@ fun ArenaApp(viewModel: ArenaViewModel) {
 
     Scaffold(
         topBar = {
-            Column {
-                Spacer(modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+            ) {
                 ArenaTopBar(
                     currentUrl = currentUrl,
                     pageTitle = pageTitle,
@@ -111,8 +115,7 @@ fun ArenaApp(viewModel: ArenaViewModel) {
                     onToggleDesktop = { viewModel.toggleDesktopMode() },
                     onOpenPrompts = { viewModel.setActiveSheet(ActiveSheet.Prompts) },
                     onOpenBattleTracker = { viewModel.setActiveSheet(ActiveSheet.BattleTracker) },
-                    onOpenSettings = { viewModel.setActiveSheet(ActiveSheet.Settings) },
-                    onNavigateToUrl = { url -> viewModel.setUrl(url) }
+                    onOpenSettings = { viewModel.setActiveSheet(ActiveSheet.Settings) }
                 )
                 OfflineBanner(
                     isOnline = isOnline,
@@ -120,8 +123,15 @@ fun ArenaApp(viewModel: ArenaViewModel) {
                 )
             }
         },
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-        contentWindowInsets = WindowInsets(0.dp)
+        bottomBar = {
+            ArenaBottomBar(
+                currentUrl = currentUrl,
+                onNavigateToUrl = { url -> viewModel.setUrl(url) },
+                onOpenBattleTracker = { viewModel.setActiveSheet(ActiveSheet.BattleTracker) },
+                onOpenPrompts = { viewModel.setActiveSheet(ActiveSheet.Prompts) }
+            )
+        },
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -138,6 +148,12 @@ fun ArenaApp(viewModel: ArenaViewModel) {
                 onCanGoBackChange = { viewModel.setCanGoBack(it) },
                 onCanGoForwardChange = { viewModel.setCanGoForward(it) },
                 onWebViewCreated = { webView -> viewModel.registerWebView(webView) }
+            )
+            ArenaLoadingPill(
+                progress = progress,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 12.dp)
             )
         }
     }
