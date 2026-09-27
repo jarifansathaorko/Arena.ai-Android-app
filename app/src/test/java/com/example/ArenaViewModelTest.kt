@@ -5,9 +5,13 @@ import android.net.Uri
 import android.webkit.ValueCallback
 import android.webkit.WebView
 import androidx.test.core.app.ApplicationProvider
+import com.example.data.model.BattleWinner
 import com.example.ui.ARENA_HOME_URL
 import com.example.ui.ActiveSheet
+import com.example.ui.ArenaSubMode
+import com.example.ui.ArenaTab
 import com.example.ui.ArenaViewModel
+import com.example.ui.theme.ThemeMode
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -140,7 +144,7 @@ class ArenaViewModelTest {
         // Subclass to intercept JS evaluation: ShadowWebView does not
         // implement evaluateJavascript, so a plain WebView would crash here.
         val webView = object : WebView(app) {
-            override fun evaluateJavascript(script: String?, resultCallback: ValueCallback<String>?) {
+            override fun evaluateJavascript(script: String, resultCallback: ValueCallback<String>?) {
                 evaluated = script
             }
         }
@@ -153,5 +157,88 @@ class ArenaViewModelTest {
             vm.unregisterWebView()
             webView.destroy()
         }
+    }
+
+    @Test
+    fun switchTab_updatesSelectedTab() {
+        val vm = viewModel()
+        assertEquals(ArenaTab.ARENA, vm.selectedTab.value)
+
+        vm.switchTab(ArenaTab.PROMPTS)
+        assertEquals(ArenaTab.PROMPTS, vm.selectedTab.value)
+
+        vm.switchTab(ArenaTab.BATTLES)
+        assertEquals(ArenaTab.BATTLES, vm.selectedTab.value)
+
+        vm.switchTab(ArenaTab.SETTINGS)
+        assertEquals(ArenaTab.SETTINGS, vm.selectedTab.value)
+    }
+
+    @Test
+    fun switchSubMode_updatesModeAndUrl() {
+        val vm = viewModel()
+        assertEquals(ArenaSubMode.BATTLE, vm.selectedSubMode.value)
+
+        vm.switchSubMode(ArenaSubMode.LEADERBOARD)
+        assertEquals(ArenaSubMode.LEADERBOARD, vm.selectedSubMode.value)
+        assertEquals(ArenaSubMode.LEADERBOARD.url, vm.currentUrl.value)
+
+        vm.switchSubMode(ArenaSubMode.HISTORY)
+        assertEquals(ArenaSubMode.HISTORY, vm.selectedSubMode.value)
+        assertEquals(ArenaSubMode.HISTORY.url, vm.currentUrl.value)
+    }
+
+    @Test
+    fun sendPromptToArena_switchesTabToArena() {
+        val vm = viewModel()
+        vm.switchTab(ArenaTab.PROMPTS)
+        assertEquals(ArenaTab.PROMPTS, vm.selectedTab.value)
+
+        vm.sendPromptToArena("Test prompt")
+        assertEquals(ArenaTab.ARENA, vm.selectedTab.value)
+    }
+
+    @Test
+    fun setThemeMode_updatesState() {
+        val vm = viewModel()
+        assertEquals(ThemeMode.SYSTEM, vm.themeMode.value)
+
+        vm.setThemeMode(ThemeMode.DARK)
+        assertEquals(ThemeMode.DARK, vm.themeMode.value)
+
+        vm.setThemeMode(ThemeMode.LIGHT)
+        assertEquals(ThemeMode.LIGHT, vm.themeMode.value)
+    }
+
+    @Test
+    fun setDynamicColor_toggles() {
+        val vm = viewModel()
+        assertFalse(vm.dynamicColor.value)
+
+        vm.setDynamicColor(true)
+        assertTrue(vm.dynamicColor.value)
+    }
+
+    @Test
+    fun promptFilters_updateFilterStates() {
+        val vm = viewModel()
+        vm.setPromptSearch("Quantum")
+        assertEquals("Quantum", vm.promptSearchQuery.value)
+
+        vm.setPromptCategory("Physics")
+        assertEquals("Physics", vm.promptCategory.value)
+    }
+
+    @Test
+    fun battleFilters_updateFilterStates() {
+        val vm = viewModel()
+        vm.setBattleSearch("Gemini")
+        assertEquals("Gemini", vm.battleSearchQuery.value)
+
+        vm.setBattleCategory("Coding")
+        assertEquals("Coding", vm.battleCategory.value)
+
+        vm.setBattleWinnerFilter(BattleWinner.MODEL_A)
+        assertEquals(BattleWinner.MODEL_A, vm.battleWinnerFilter.value)
     }
 }

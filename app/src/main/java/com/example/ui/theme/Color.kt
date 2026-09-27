@@ -28,3 +28,24 @@ val ArenaLightSurfaceVariant = Color(0xFFF1F5F9)
 val ArenaLightBorder = Color(0xFFE2E8F0)
 val TextPrimaryLight = Color(0xFF0F172A)
 val TextSecondaryLight = Color(0xFF475569)
+
+// Category Accent Colors
+val CategoryReasoning = Color(0xFF8B5CF6)
+val CategoryCoding = Color(0xFF10B981)
+val CategoryMath = Color(0xFF0EA5E9)
+val CategoryCreative = Color(0xFFD946EF)
+val CategoryFactuality = Color(0xFFF59E0B)
+val CategoryStressTest = Color(0xFFEF4444)
+val CategoryGeneral = Color(0xFF64748B)
+
+fun getCategoryColor(category: String): Color {
+    return when (category.lowercase()) {
+        "reasoning" -> CategoryReasoning
+        "coding" -> CategoryCoding
+        "math" -> CategoryMath
+        "creative" -> CategoryCreative
+        "factuality" -> CategoryFactuality
+        "stress test" -> CategoryStressTest
+        else -> CategoryGeneral
+    }
+}

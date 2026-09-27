@@ -1,9 +1,17 @@
 package com.example.data.model
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "benchmark_prompts")
+@Entity(
+    tableName = "benchmark_prompts",
+    indices = [
+        Index(value = ["category"]),
+        Index(value = ["isFavorite"]),
+        Index(value = ["createdAt"])
+    ]
+)
 data class PromptItem(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,

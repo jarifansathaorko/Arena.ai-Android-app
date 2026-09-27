@@ -44,6 +44,31 @@ class ArenaRepository(
         promptDao.updateFavorite(id, !currentFavorite)
     }
 
+    suspend fun updatePrompt(id: Long, title: String, category: String, content: String) {
+        require(title.isNotBlank()) { "Prompt title must not be blank" }
+        require(content.isNotBlank()) { "Prompt content must not be blank" }
+        val existing = promptDao.getPromptById(id) ?: return
+        promptDao.updatePrompt(
+            existing.copy(
+                title = title.trim(),
+                category = category.trim().ifBlank { "General" },
+                content = content.trim()
+            )
+        )
+    }
+
+    suspend fun duplicatePrompt(prompt: PromptItem): Long {
+        return promptDao.insertPrompt(
+            PromptItem(
+                title = "${prompt.title} (Copy)",
+                category = prompt.category,
+                content = prompt.content,
+                isCustom = true,
+                isFavorite = false
+            )
+        )
+    }
+
     suspend fun deletePrompt(prompt: PromptItem) {
         promptDao.deletePrompt(prompt)
     }
@@ -82,6 +107,30 @@ class ArenaRepository(
     }
 
     companion object {
+        fun filterBattles(
+            battles: List<BattleRecord>,
+            query: String = "",
+            category: String = "All",
+            winnerFilter: BattleWinner? = null
+        ): List<BattleRecord> {
+            val q = query.trim()
+            return battles.filter { battle ->
+                val matchesCategory = category == "All" || battle.category.equals(category, ignoreCase = true)
+                val matchesWinner = winnerFilter == null || battle.winner == winnerFilter
+                val matchesQuery = q.isEmpty() ||
+                        battle.modelA.contains(q, ignoreCase = true) ||
+                        battle.modelB.contains(q, ignoreCase = true) ||
+                        battle.promptTopic.contains(q, ignoreCase = true) ||
+                        battle.notes.contains(q, ignoreCase = true)
+                matchesCategory && matchesWinner && matchesQuery
+            }
+        }
+
+        fun battleCategories(battles: List<BattleRecord>): List<String> {
+            val preferred = listOf("Reasoning", "Coding", "Math", "Creative", "Factuality", "General")
+            val present = battles.map { it.category }.distinct()
+            return preferred.filter { it in present } + (present - preferred.toSet()).sorted()
+        }
         /**
          * Pure, testable aggregation of per-model win stats.
          * Ties / "both bad" count as participations but not wins for either side.

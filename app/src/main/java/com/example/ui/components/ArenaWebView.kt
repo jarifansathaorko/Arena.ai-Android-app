@@ -5,7 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
+import android.net.http.SslError
 import android.os.Build
+import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.*
@@ -24,15 +26,18 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.example.ui.WebViewCommand
 import com.example.ui.theme.ArenaPrimary
+import com.example.ui.theme.Dimensions
+import kotlinx.coroutines.flow.SharedFlow
 
 private const val DESKTOP_USER_AGENT =
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
@@ -49,15 +54,46 @@ fun ArenaWebView(
     onCanGoBackChange: (Boolean) -> Unit,
     onCanGoForwardChange: (Boolean) -> Unit,
     onWebViewCreated: (WebView) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    webViewCommands: SharedFlow<WebViewCommand>? = null
 ) {
     val context = LocalContext.current
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var hasError by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
-    // Tracks the last URL we programmatically loaded so recompositions
-    // (progress, title, rotation) never re-issue loadUrl() for it.
     var lastLoadedUrl by remember { mutableStateOf<String?>(null) }
+    var isFirstLoad by remember { mutableStateOf(true) }
+    var currentProgress by remember { mutableStateOf(0f) }
+
+    // Retained bundle for state preservation across recreations
+    val webViewStateBundle = rememberSaveable { Bundle() }
+
+    // Listen to reactive commands from ViewModel
+    if (webViewCommands != null) {
+        LaunchedEffect(webViewCommands) {
+            webViewCommands.collect { command ->
+                when (command) {
+                    is WebViewCommand.Reload -> {
+                        hasError = false
+                        webViewRef?.reload()
+                    }
+                    is WebViewCommand.GoBack -> {
+                        if (webViewRef?.canGoBack() == true) webViewRef?.goBack()
+                    }
+                    is WebViewCommand.GoForward -> {
+                        if (webViewRef?.canGoForward() == true) webViewRef?.goForward()
+                    }
+                    is WebViewCommand.InjectPrompt -> {
+                        webViewRef?.evaluateJavascript(command.script, null)
+                    }
+                    is WebViewCommand.ClearSession -> {
+                        webViewRef?.clearCache(true)
+                        webViewRef?.clearHistory()
+                    }
+                }
+            }
+        }
+    }
 
     // File chooser launcher for multimodal vision uploads on Arena.ai
     var filePathCallback by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
@@ -70,8 +106,7 @@ fun ArenaWebView(
                 dataIntent?.data != null -> arrayOf(dataIntent.data!!)
                 dataIntent?.clipData != null -> {
                     val count = dataIntent.clipData!!.itemCount
-                    val uris = Array(count) { i -> dataIntent.clipData!!.getItemAt(i).uri }
-                    uris
+                    Array(count) { i -> dataIntent.clipData!!.getItemAt(i).uri }
                 }
                 else -> null
             }
@@ -91,30 +126,16 @@ fun ArenaWebView(
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
 
-                    // Virtualized / Cloud Emulator rendernode guard:
-                    // When running in headless/cloud or emulator containers lacking /dev/dri/renderD*
-                    // nodes, fallback to LAYER_TYPE_SOFTWARE to prevent MESA driver rendernode errors.
-                    val isVirtualOrEmulator = Build.FINGERPRINT.startsWith("generic") ||
+                    // Hardware vs Software rendering:
+                    // Check for standard emulator indicators safely without inspecting low-level /dev nodes
+                    val isEmulator = Build.FINGERPRINT.startsWith("generic") ||
                             Build.FINGERPRINT.startsWith("unknown") ||
                             Build.MODEL.contains("google_sdk") ||
                             Build.MODEL.contains("Emulator") ||
-                            Build.MODEL.contains("Android SDK built for") ||
                             Build.HARDWARE.contains("goldfish") ||
-                            Build.HARDWARE.contains("ranchu") ||
-                            Build.PRODUCT.contains("sdk") ||
-                            Build.PRODUCT.contains("emulator")
+                            Build.HARDWARE.contains("ranchu")
 
-                    val hasHardwareGpuNode = try {
-                        java.io.File("/dev/kgsl-3d0").exists() || // Qualcomm Adreno
-                        java.io.File("/dev/mali0").exists() ||    // ARM Mali
-                        java.io.File("/dev/nvhost-gpu").exists() || // Tegra
-                        java.io.File("/dev/pvr_sync").exists() || // PowerVR
-                        (java.io.File("/dev/dri").exists() && (java.io.File("/dev/dri").listFiles()?.isNotEmpty() == true))
-                    } catch (e: Exception) {
-                        false
-                    }
-
-                    if (isVirtualOrEmulator || !hasHardwareGpuNode) {
+                    if (isEmulator) {
                         setLayerType(View.LAYER_TYPE_SOFTWARE, null)
                     } else {
                         setLayerType(View.LAYER_TYPE_HARDWARE, null)
@@ -128,25 +149,23 @@ fun ArenaWebView(
                     settings.apply {
                         javaScriptEnabled = true
                         domStorageEnabled = true
-                        databaseEnabled = true
                         loadWithOverviewMode = true
                         useWideViewPort = true
                         setSupportZoom(true)
                         builtInZoomControls = true
                         displayZoomControls = false
                         cacheMode = WebSettings.LOAD_DEFAULT
-                        allowFileAccess = true
+                        // Strict security: disable local file system access via file://
+                        allowFileAccess = false
                         allowContentAccess = true
                         mediaPlaybackRequiresUserGesture = false
-                        // Safe Browsing exists only on API 26+; guard for minSdk 24.
+
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                             safeBrowsingEnabled = true
                         }
 
-                        // Text zoom
                         this.textZoom = textZoom
 
-                        // User agent
                         userAgentString = if (isDesktopMode) {
                             DESKTOP_USER_AGENT
                         } else {
@@ -157,7 +176,12 @@ fun ArenaWebView(
                     webChromeClient = object : WebChromeClient() {
                         override fun onProgressChanged(view: WebView?, newProgress: Int) {
                             super.onProgressChanged(view, newProgress)
-                            onProgressChange(newProgress / 100f)
+                            val normalized = newProgress / 100f
+                            currentProgress = normalized
+                            onProgressChange(normalized)
+                            if (newProgress >= 80) {
+                                isFirstLoad = false
+                            }
                         }
 
                         override fun onReceivedTitle(view: WebView?, title: String?) {
@@ -179,13 +203,13 @@ fun ArenaWebView(
                             }
                             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
 
-                            try {
+                            return try {
                                 filePickerLauncher.launch(intent)
+                                true
                             } catch (e: Exception) {
                                 filePathCallback = null
-                                return false
+                                false
                             }
-                            return true
                         }
                     }
 
@@ -203,12 +227,15 @@ fun ArenaWebView(
 
                         override fun onPageFinished(view: WebView?, url: String?) {
                             super.onPageFinished(view, url)
+                            isFirstLoad = false
                             url?.let {
                                 lastLoadedUrl = it
                                 onUrlChange(it)
                             }
                             onCanGoBackChange(view?.canGoBack() == true)
                             onCanGoForwardChange(view?.canGoForward() == true)
+                            // Save state for recreation
+                            view?.saveState(webViewStateBundle)
                         }
 
                         override fun doUpdateVisitedHistory(
@@ -233,11 +260,23 @@ fun ArenaWebView(
                             super.onReceivedError(view, request, error)
                             if (request?.isForMainFrame == true) {
                                 hasError = true
+                                isFirstLoad = false
                                 errorMessage = error?.description?.toString() ?: "Failed to connect to Arena"
-                                // Push progress to done so the loading pill hides
-                                // underneath the error overlay.
                                 onProgressChange(1f)
                             }
+                        }
+
+                        override fun onReceivedSslError(
+                            view: WebView?,
+                            handler: SslErrorHandler?,
+                            error: SslError?
+                        ) {
+                            // Enforce SSL security: never proceed on invalid SSL certificates
+                            handler?.cancel()
+                            hasError = true
+                            isFirstLoad = false
+                            errorMessage = "Secure connection to Arena failed (SSL error code: ${error?.primaryError}). Connection halted for your security."
+                            onProgressChange(1f)
                         }
 
                         override fun shouldOverrideUrlLoading(
@@ -245,9 +284,10 @@ fun ArenaWebView(
                             request: WebResourceRequest?
                         ): Boolean {
                             val uri = request?.url ?: return false
-                            val host = uri.host ?: ""
+                            val scheme = uri.scheme?.lowercase() ?: ""
+                            val host = uri.host?.lowercase() ?: ""
 
-                            // Keep arena.ai and auth flows inside our webview
+                            // Keep arena.ai and authentication flows inside this webview
                             if (host.contains("arena.ai") ||
                                 host.contains("lmarena.ai") ||
                                 host.contains("lmsys.org") ||
@@ -258,12 +298,16 @@ fun ArenaWebView(
                                 return false
                             }
 
-                            // Open external links (Twitter, Github, etc.) in system browser
+                            // Handle mailto:, tel: and external URLs cleanly
                             return try {
-                                val intent = Intent(Intent.ACTION_VIEW, uri)
+                                val intent = when (scheme) {
+                                    "mailto" -> Intent(Intent.ACTION_SENDTO, uri)
+                                    "tel" -> Intent(Intent.ACTION_DIAL, uri)
+                                    else -> Intent(Intent.ACTION_VIEW, uri)
+                                }
                                 ctx.startActivity(intent)
                                 true
-                            } catch (e: Exception) {
+                            } catch (_: Exception) {
                                 false
                             }
                         }
@@ -272,21 +316,14 @@ fun ArenaWebView(
                             view: WebView?,
                             detail: RenderProcessGoneDetail?
                         ): Boolean {
-                            // Returning true tells the framework we handled it,
-                            // so the app survives instead of crashing.
                             if (detail?.didCrash() == true) {
-                                // Genuine renderer crash: don't blindly reload
-                                // (that risks a crash->reload loop). Surface the
-                                // error overlay so the user retries manually.
                                 hasError = true
-                                errorMessage =
-                                    "Arena's page renderer crashed. Your data is safe — tap retry to reload."
+                                isFirstLoad = false
+                                errorMessage = "Arena's render process crashed. Your state is preserved — tap retry to reload."
                                 onCanGoBackChange(false)
                                 onCanGoForwardChange(false)
                                 onProgressChange(1f)
                             } else {
-                                // System killed the renderer for resources:
-                                // in-place reload is safe here.
                                 hasError = false
                                 errorMessage = ""
                                 view?.reload()
@@ -295,7 +332,12 @@ fun ArenaWebView(
                         }
                     }
 
-                    loadUrl(currentUrl)
+                    // Restore state if bundle exists, else load initial URL
+                    if (!webViewStateBundle.isEmpty) {
+                        restoreState(webViewStateBundle)
+                    } else {
+                        loadUrl(currentUrl)
+                    }
                     lastLoadedUrl = currentUrl
                     webViewRef = this
                     onWebViewCreated(this)
@@ -303,39 +345,41 @@ fun ArenaWebView(
             },
             update = { webView ->
                 webViewRef = webView
-                // Sync programmatic navigation (quick chips, deep links, session
-                // reset). ViewModel.setUrl() only mutates state, so this is the
-                // single loadUrl() path: no competing duplicate loads. In-page
-                // SPA navigations already sync state via onUrlObserved, hence
-                // the webView.url check.
                 if (currentUrl.isNotBlank() && lastLoadedUrl != currentUrl && webView.url != currentUrl) {
                     lastLoadedUrl = currentUrl
                     webView.loadUrl(currentUrl)
                 } else {
-                    // Update User Agent if desktop mode changed
                     val targetUA = if (isDesktopMode) DESKTOP_USER_AGENT else null
                     if (webView.settings.userAgentString != targetUA && targetUA != null) {
                         webView.settings.userAgentString = targetUA
                         webView.reload()
                     } else if (!isDesktopMode && webView.settings.userAgentString == DESKTOP_USER_AGENT) {
-                        // getDefaultUserAgent path: assigning an empty/default UA resets
-                        // to the system default instead of relying on null semantics.
                         webView.settings.userAgentString = WebSettings.getDefaultUserAgent(context)
                         webView.reload()
                     }
                 }
 
-                // Update text zoom
                 if (webView.settings.textZoom != textZoom) {
                     webView.settings.textZoom = textZoom
                 }
             },
             onRelease = { webView ->
                 webView.stopLoading()
+                webView.saveState(webViewStateBundle)
                 webView.destroy()
             },
             modifier = Modifier.fillMaxSize()
         )
+
+        // Native Loading Skeleton (replaces white flash on startup)
+        AnimatedVisibility(
+            visible = isFirstLoad && !hasError && currentProgress < 0.85f,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            ArenaSkeletonPlaceholder()
+        }
 
         // Error / Offline State Overlay
         AnimatedVisibility(
@@ -352,22 +396,22 @@ fun ArenaWebView(
                 contentAlignment = Alignment.Center
             ) {
                 Card(
-                    shape = RoundedCornerShape(24.dp),
+                    shape = RoundedCornerShape(Dimensions.radiusSheet),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
                     ),
                     modifier = Modifier
-                        .padding(24.dp)
+                        .padding(Dimensions.space2xl)
                         .widthIn(max = 380.dp)
                 ) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(28.dp)
+                        modifier = Modifier.padding(Dimensions.space2xl)
                     ) {
                         Surface(
                             shape = CircleShape,
                             color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
-                            modifier = Modifier.size(88.dp)
+                            modifier = Modifier.size(80.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
@@ -378,52 +422,54 @@ fun ArenaWebView(
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(Dimensions.spaceStandard))
                         Text(
-                            text = "Unable to connect to Arena.ai",
+                            text = "Connection Issue",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(Dimensions.spaceSmall))
                         Text(
-                            text = if (errorMessage.isNotBlank()) errorMessage else "Please check your internet connection and try again.",
+                            text = if (errorMessage.isNotBlank()) errorMessage else "Unable to load Arena.ai. Please check your connection and retry.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(modifier = Modifier.height(24.dp))
+                        Spacer(modifier = Modifier.height(Dimensions.space2xl))
                         Button(
                             onClick = {
                                 hasError = false
                                 webViewRef?.reload()
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = ArenaPrimary),
+                            shape = RoundedCornerShape(Dimensions.radiusSmall),
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .height(Dimensions.minTouchTarget)
                                 .testTag("webview_retry_button")
                         ) {
                             Icon(imageVector = Icons.Default.Refresh, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(Dimensions.spaceSmall))
                             Text("Retry Connection")
                         }
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(Dimensions.spaceSmall))
                         OutlinedButton(
                             onClick = {
                                 try {
                                     context.startActivity(
                                         Intent(Intent.ACTION_VIEW, Uri.parse(currentUrl))
                                     )
-                                } catch (_: Exception) {
-                                    // No browser available; stay on the error card.
-                                }
+                                } catch (_: Exception) { }
                             },
+                            shape = RoundedCornerShape(Dimensions.radiusSmall),
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .height(Dimensions.minTouchTarget)
                                 .testTag("webview_open_browser_button")
                         ) {
                             Icon(imageVector = Icons.Default.OpenInBrowser, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Open in Browser")
+                            Spacer(modifier = Modifier.width(Dimensions.spaceSmall))
+                            Text("Open in System Browser")
                         }
                     }
                 }

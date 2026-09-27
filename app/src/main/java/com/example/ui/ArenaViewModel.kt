@@ -12,6 +12,8 @@ import com.example.data.model.BattleRecord
 import com.example.data.model.BattleWinner
 import com.example.data.model.PromptItem
 import com.example.data.repository.ArenaRepository
+import com.example.data.repository.ModelStats
+import com.example.ui.theme.ThemeMode
 import com.example.util.NetworkObserver
 import java.lang.ref.WeakReference
 import kotlinx.coroutines.flow.*
@@ -31,6 +33,19 @@ class ArenaViewModel(application: Application) : AndroidViewModel(application) {
     private val database = ArenaDatabase.getInstance(application)
     private val repository = ArenaRepository(database.promptDao(), database.battleDao())
     private val networkObserver = NetworkObserver(application)
+
+    // Navigation and Viewport State
+    private val _selectedTab = MutableStateFlow(ArenaTab.ARENA)
+    val selectedTab: StateFlow<ArenaTab> = _selectedTab.asStateFlow()
+
+    private val _selectedSubMode = MutableStateFlow(ArenaSubMode.BATTLE)
+    val selectedSubMode: StateFlow<ArenaSubMode> = _selectedSubMode.asStateFlow()
+
+    private val _themeMode = MutableStateFlow(ThemeMode.SYSTEM)
+    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+
+    private val _dynamicColor = MutableStateFlow(false)
+    val dynamicColor: StateFlow<Boolean> = _dynamicColor.asStateFlow()
 
     private val _currentUrl = MutableStateFlow(ARENA_HOME_URL)
     val currentUrl: StateFlow<String> = _currentUrl.asStateFlow()
@@ -56,15 +71,68 @@ class ArenaViewModel(application: Application) : AndroidViewModel(application) {
     private val _activeSheet = MutableStateFlow<ActiveSheet>(ActiveSheet.None)
     val activeSheet: StateFlow<ActiveSheet> = _activeSheet.asStateFlow()
 
+    // Decoupled WebView Command Channel
+    private val _webViewCommands = MutableSharedFlow<WebViewCommand>(extraBufferCapacity = 16)
+    val webViewCommands: SharedFlow<WebViewCommand> = _webViewCommands.asSharedFlow()
+
+    // Network Status
     val isOnline: StateFlow<Boolean> = networkObserver.observe()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), networkObserver.isConnected())
 
+    // Database Flows
     val prompts: StateFlow<List<PromptItem>> = repository.allPrompts
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val battles: StateFlow<List<BattleRecord>> = repository.allBattles
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // Prompts Screen State & Filtered Flow
+    private val _promptSearchQuery = MutableStateFlow("")
+    val promptSearchQuery: StateFlow<String> = _promptSearchQuery.asStateFlow()
+
+    private val _promptCategory = MutableStateFlow("All")
+    val promptCategory: StateFlow<String> = _promptCategory.asStateFlow()
+
+    val promptCategories: StateFlow<List<String>> = prompts
+        .map { ArenaRepository.promptCategories(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val filteredPrompts: StateFlow<List<PromptItem>> = combine(
+        prompts,
+        _promptCategory,
+        _promptSearchQuery
+    ) { all, category, query ->
+        ArenaRepository.filterPrompts(all, category, query)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Battles Screen State & Filtered Flow
+    private val _battleSearchQuery = MutableStateFlow("")
+    val battleSearchQuery: StateFlow<String> = _battleSearchQuery.asStateFlow()
+
+    private val _battleCategory = MutableStateFlow("All")
+    val battleCategory: StateFlow<String> = _battleCategory.asStateFlow()
+
+    private val _battleWinnerFilter = MutableStateFlow<BattleWinner?>(null)
+    val battleWinnerFilter: StateFlow<BattleWinner?> = _battleWinnerFilter.asStateFlow()
+
+    val battleCategories: StateFlow<List<String>> = battles
+        .map { ArenaRepository.battleCategories(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val filteredBattles: StateFlow<List<BattleRecord>> = combine(
+        battles,
+        _battleSearchQuery,
+        _battleCategory,
+        _battleWinnerFilter
+    ) { all, query, category, winner ->
+        ArenaRepository.filterBattles(all, query, category, winner)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val modelStats: StateFlow<List<ModelStats>> = battles
+        .map { ArenaRepository.computeModelStats(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Backward-compatible reference for tests
     private var activeWebView: WeakReference<WebView>? = null
 
     init {
@@ -87,19 +155,68 @@ class ArenaViewModel(application: Application) : AndroidViewModel(application) {
         activeWebView = null
     }
 
+    // Navigation Actions
+    fun switchTab(tab: ArenaTab) {
+        if (_selectedTab.value != tab) {
+            _selectedTab.value = tab
+        }
+    }
+
+    fun switchSubMode(mode: ArenaSubMode) {
+        _selectedSubMode.value = mode
+        setUrl(mode.url)
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        _themeMode.value = mode
+    }
+
+    fun setDynamicColor(enabled: Boolean) {
+        _dynamicColor.value = enabled
+    }
+
+    fun setPromptSearch(query: String) {
+        _promptSearchQuery.value = query
+    }
+
+    fun setPromptCategory(category: String) {
+        _promptCategory.value = category
+    }
+
+    fun setBattleSearch(query: String) {
+        _battleSearchQuery.value = query
+    }
+
+    fun setBattleCategory(category: String) {
+        _battleCategory.value = category
+    }
+
+    fun setBattleWinnerFilter(winner: BattleWinner?) {
+        _battleWinnerFilter.value = winner
+    }
+
     fun setUrl(url: String) {
         val normalized = normalizeUrl(url) ?: return
-        if (normalized == _currentUrl.value) return // avoid reload loops
-        // State-only: ArenaWebView's update block is the single place that
-        // calls loadUrl(), so quick chips, deep links and resets can't
-        // trigger competing duplicate loads.
+        if (normalized == _currentUrl.value) return
         _currentUrl.value = normalized
+
+        // Update selectedSubMode if URL matches a known mode
+        when {
+            normalized.contains("/leaderboard") -> _selectedSubMode.value = ArenaSubMode.LEADERBOARD
+            normalized.contains("/history") -> _selectedSubMode.value = ArenaSubMode.HISTORY
+            normalized == "https://arena.ai" || normalized == "https://arena.ai/" -> _selectedSubMode.value = ArenaSubMode.BATTLE
+        }
     }
 
     fun onUrlObserved(url: String) {
         val normalized = normalizeUrl(url) ?: return
         if (normalized != _currentUrl.value) {
             _currentUrl.value = normalized
+            when {
+                normalized.contains("/leaderboard") -> _selectedSubMode.value = ArenaSubMode.LEADERBOARD
+                normalized.contains("/history") -> _selectedSubMode.value = ArenaSubMode.HISTORY
+                normalized == "https://arena.ai" || normalized == "https://arena.ai/" -> _selectedSubMode.value = ArenaSubMode.BATTLE
+            }
         }
     }
 
@@ -111,9 +228,6 @@ class ArenaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setProgress(progress: Float) {
-        // Throttle: only emit when the change is visible (>2%) or load finished.
-        // The top bar progress indicator recomposes on every emission, so this
-        // cuts ~100 recompositions per page load down to ~30 with no visual loss.
         val clamped = progress.coerceIn(0f, 1f)
         val current = _loadingProgress.value
         if (clamped == 1f || clamped == 0f || kotlin.math.abs(clamped - current) >= 0.02f) {
@@ -142,20 +256,23 @@ class ArenaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun reload() {
+        _webViewCommands.tryEmit(WebViewCommand.Reload)
         activeWebView?.get()?.reload()
     }
 
     fun goBack(): Boolean {
+        _webViewCommands.tryEmit(WebViewCommand.GoBack)
         val webView = activeWebView?.get()
         return if (webView?.canGoBack() == true) {
             webView.goBack()
             true
         } else {
-            false
+            _canGoBack.value
         }
     }
 
     fun goForward() {
+        _webViewCommands.tryEmit(WebViewCommand.GoForward)
         val webView = activeWebView?.get()
         if (webView?.canGoForward() == true) {
             webView.goForward()
@@ -168,9 +285,22 @@ class ArenaViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun injectPromptToArena(promptContent: String): Boolean {
         if (promptContent.isBlank()) return false
-        val webView = activeWebView?.get() ?: return false
-        webView.evaluateJavascript(buildInjectionScript(promptContent), null)
-        return true
+        val script = buildInjectionScript(promptContent)
+        _webViewCommands.tryEmit(WebViewCommand.InjectPrompt(script))
+        val webView = activeWebView?.get()
+        if (webView != null) {
+            webView.evaluateJavascript(script, null)
+            return true
+        }
+        return false
+    }
+
+    /**
+     * Injects prompt and automatically switches the active tab to Arena!
+     */
+    fun sendPromptToArena(promptContent: String): Boolean {
+        switchTab(ArenaTab.ARENA)
+        return injectPromptToArena(promptContent)
     }
 
     fun addCustomPrompt(title: String, category: String, content: String) {
@@ -181,6 +311,23 @@ class ArenaViewModel(application: Application) : AndroidViewModel(application) {
             } catch (_: IllegalArgumentException) {
                 // Invalid input already guarded above; ignore.
             }
+        }
+    }
+
+    fun updatePrompt(id: Long, title: String, category: String, content: String) {
+        if (title.isBlank() || content.isBlank()) return
+        viewModelScope.launch {
+            try {
+                repository.updatePrompt(id, title, category, content)
+            } catch (_: IllegalArgumentException) {
+                // Guarded
+            }
+        }
+    }
+
+    fun duplicatePrompt(prompt: PromptItem) {
+        viewModelScope.launch {
+            repository.duplicatePrompt(prompt)
         }
     }
 
@@ -234,23 +381,18 @@ class ArenaViewModel(application: Application) : AndroidViewModel(application) {
         WebStorage.getInstance().deleteAllData()
         _loadingProgress.value = 0f
         _pageTitle.value = "Arena AI"
+        _webViewCommands.tryEmit(WebViewCommand.ClearSession)
         val webView = activeWebView?.get()
         webView?.clearCache(true)
         webView?.clearHistory()
         val alreadyHome = _currentUrl.value == ARENA_HOME_URL
         _currentUrl.value = ARENA_HOME_URL
-        // State change alone drives a load via the WebView update block;
-        // only force-load when already home (no state change to observe).
         if (alreadyHome) {
             webView?.loadUrl(ARENA_HOME_URL)
         }
     }
 
     companion object {
-        /**
-         * Normalizes a raw URL string. Returns null for blank or
-         * non-http(s) URLs (e.g. javascript:, about:).
-         */
         fun normalizeUrl(raw: String): String? {
             val trimmed = raw.trim()
             if (trimmed.isBlank()) return null
@@ -266,11 +408,6 @@ class ArenaViewModel(application: Application) : AndroidViewModel(application) {
                     host == "lmarena.ai" || host.endsWith(".lmarena.ai")
         }
 
-        /**
-         * Builds the prompt-injection JavaScript. Uses JSONObject.quote()
-         * so quotes, backslashes, newlines and unicode separators in the
-         * prompt can never break out of the JS string literal.
-         */
         fun buildInjectionScript(promptContent: String): String {
             val quoted = JSONObject.quote(promptContent)
             return """

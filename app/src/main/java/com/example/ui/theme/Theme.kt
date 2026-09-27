@@ -45,24 +45,48 @@ private val LightColorScheme = lightColorScheme(
     outline = ArenaLightBorder
 )
 
+enum class ThemeMode {
+    SYSTEM, DARK, LIGHT
+}
+
 @Composable
 fun MyApplicationTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false, // Keep consistent Arena AI styling
+    themeMode: ThemeMode = ThemeMode.SYSTEM,
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
+    val isSystemDark = isSystemInDarkTheme()
+    val isDark = when (themeMode) {
+        ThemeMode.SYSTEM -> isSystemDark
+        ThemeMode.DARK -> true
+        ThemeMode.LIGHT -> false
+    }
+
     val colorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-        darkTheme -> DarkColorScheme
+        isDark -> DarkColorScheme
         else -> LightColorScheme
     }
 
     MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography,
+        content = content
+    )
+}
+
+@Composable
+fun MyApplicationTheme(
+    darkTheme: Boolean,
+    dynamicColor: Boolean = false,
+    content: @Composable () -> Unit
+) {
+    MyApplicationTheme(
+        themeMode = if (darkTheme) ThemeMode.DARK else ThemeMode.LIGHT,
+        dynamicColor = dynamicColor,
         content = content
     )
 }

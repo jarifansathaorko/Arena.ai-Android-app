@@ -30,6 +30,12 @@ interface PromptDao {
     @Query("UPDATE benchmark_prompts SET isFavorite = :isFavorite WHERE id = :id")
     suspend fun updateFavorite(id: Long, isFavorite: Boolean)
 
+    @Query("SELECT * FROM benchmark_prompts WHERE title LIKE '%' || :query || '%' OR content LIKE '%' || :query || '%' ORDER BY isFavorite DESC, createdAt DESC")
+    fun searchPrompts(query: String): Flow<List<PromptItem>>
+
+    @Query("SELECT * FROM benchmark_prompts WHERE id = :id LIMIT 1")
+    suspend fun getPromptById(id: Long): PromptItem?
+
     @Query("SELECT COUNT(*) FROM benchmark_prompts")
     suspend fun getCount(): Int
 }
@@ -38,6 +44,12 @@ interface PromptDao {
 interface BattleDao {
     @Query("SELECT * FROM battle_records ORDER BY timestamp DESC")
     fun getAllBattles(): Flow<List<BattleRecord>>
+
+    @Query("SELECT * FROM battle_records WHERE modelA LIKE '%' || :query || '%' OR modelB LIKE '%' || :query || '%' OR promptTopic LIKE '%' || :query || '%' OR notes LIKE '%' || :query || '%' ORDER BY timestamp DESC")
+    fun searchBattles(query: String): Flow<List<BattleRecord>>
+
+    @Query("SELECT * FROM battle_records WHERE id = :id LIMIT 1")
+    suspend fun getBattleById(id: Long): BattleRecord?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBattle(battle: BattleRecord): Long
@@ -77,7 +89,7 @@ abstract class ArenaDatabase : RoomDatabase() {
                     context.applicationContext,
                     ArenaDatabase::class.java,
                     "arena_companion.db"
-                ).fallbackToDestructiveMigration().build()
+                ).fallbackToDestructiveMigration(dropAllTables = false).build()
                 INSTANCE = instance
                 instance
             }

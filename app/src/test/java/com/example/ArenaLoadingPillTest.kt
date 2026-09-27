@@ -26,10 +26,11 @@ class ArenaLoadingPillTest {
 
     @Test
     fun pill_hidesWhenIdleOrDone() {
-        composeRule.setContent { ArenaLoadingPill(progress = 0f) }
+        val progress = androidx.compose.runtime.mutableStateOf(0f)
+        composeRule.setContent { ArenaLoadingPill(progress = progress.value) }
         composeRule.onNodeWithTag("loading_pill").assertIsNotDisplayed()
 
-        composeRule.setContent { ArenaLoadingPill(progress = 1f) }
+        progress.value = 1f
         composeRule.onNodeWithTag("loading_pill").assertIsNotDisplayed()
     }
 }
