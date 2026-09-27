@@ -84,6 +84,35 @@ fun ArenaWebView(
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
 
+                    // Virtualized / Cloud Emulator rendernode guard:
+                    // When running in headless/cloud or emulator containers lacking /dev/dri/renderD*
+                    // nodes, fallback to LAYER_TYPE_SOFTWARE to prevent MESA driver rendernode errors.
+                    val isVirtualOrEmulator = Build.FINGERPRINT.startsWith("generic") ||
+                            Build.FINGERPRINT.startsWith("unknown") ||
+                            Build.MODEL.contains("google_sdk") ||
+                            Build.MODEL.contains("Emulator") ||
+                            Build.MODEL.contains("Android SDK built for") ||
+                            Build.HARDWARE.contains("goldfish") ||
+                            Build.HARDWARE.contains("ranchu") ||
+                            Build.PRODUCT.contains("sdk") ||
+                            Build.PRODUCT.contains("emulator")
+
+                    val hasHardwareGpuNode = try {
+                        java.io.File("/dev/kgsl-3d0").exists() || // Qualcomm Adreno
+                        java.io.File("/dev/mali0").exists() ||    // ARM Mali
+                        java.io.File("/dev/nvhost-gpu").exists() || // Tegra
+                        java.io.File("/dev/pvr_sync").exists() || // PowerVR
+                        (java.io.File("/dev/dri").exists() && (java.io.File("/dev/dri").listFiles()?.isNotEmpty() == true))
+                    } catch (e: Exception) {
+                        false
+                    }
+
+                    if (isVirtualOrEmulator || !hasHardwareGpuNode) {
+                        setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+                    } else {
+                        setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                    }
+
                     // Cookie and storage configuration
                     val cookieManager = CookieManager.getInstance()
                     cookieManager.setAcceptCookie(true)
