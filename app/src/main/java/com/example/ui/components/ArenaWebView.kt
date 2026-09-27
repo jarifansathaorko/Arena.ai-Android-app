@@ -84,9 +84,6 @@ fun ArenaWebView(
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
 
-                    // Enable Hardware Acceleration
-                    setLayerType(View.LAYER_TYPE_HARDWARE, null)
-
                     // Cookie and storage configuration
                     val cookieManager = CookieManager.getInstance()
                     cookieManager.setAcceptCookie(true)
@@ -168,6 +165,17 @@ fun ArenaWebView(
                             onCanGoForwardChange(view?.canGoForward() == true)
                         }
 
+                        override fun doUpdateVisitedHistory(
+                            view: WebView?,
+                            url: String?,
+                            isReload: Boolean
+                        ) {
+                            super.doUpdateVisitedHistory(view, url, isReload)
+                            url?.let { onUrlChange(it) }
+                            onCanGoBackChange(view?.canGoBack() == true)
+                            onCanGoForwardChange(view?.canGoForward() == true)
+                        }
+
                         override fun onReceivedError(
                             view: WebView?,
                             request: WebResourceRequest?,
@@ -207,6 +215,18 @@ fun ArenaWebView(
                                 false
                             }
                         }
+
+                        override fun onRenderProcessGone(
+                            view: WebView?,
+                            detail: RenderProcessGoneDetail?
+                        ): Boolean {
+                            // Recover gracefully if render process is terminated
+                            if (detail?.didCrash() == false) {
+                                view?.destroy()
+                                return true
+                            }
+                            return false
+                        }
                     }
 
                     loadUrl(currentUrl)
@@ -230,6 +250,10 @@ fun ArenaWebView(
                 if (webView.settings.textZoom != textZoom) {
                     webView.settings.textZoom = textZoom
                 }
+            },
+            onRelease = { webView ->
+                webView.stopLoading()
+                webView.destroy()
             },
             modifier = Modifier.fillMaxSize()
         )

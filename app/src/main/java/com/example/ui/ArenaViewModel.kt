@@ -12,6 +12,7 @@ import com.example.data.model.BattleWinner
 import com.example.data.model.PromptItem
 import com.example.data.repository.ArenaRepository
 import com.example.util.NetworkObserver
+import java.lang.ref.WeakReference
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -60,7 +61,7 @@ class ArenaViewModel(application: Application) : AndroidViewModel(application) {
     val battles: StateFlow<List<BattleRecord>> = repository.allBattles
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private var activeWebView: WebView? = null
+    private var activeWebView: WeakReference<WebView>? = null
 
     init {
         viewModelScope.launch {
@@ -69,12 +70,17 @@ class ArenaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun registerWebView(webView: WebView) {
-        activeWebView = webView
+        activeWebView = WeakReference(webView)
+    }
+
+    fun unregisterWebView() {
+        activeWebView?.clear()
+        activeWebView = null
     }
 
     fun setUrl(url: String) {
         _currentUrl.value = url
-        activeWebView?.loadUrl(url)
+        activeWebView?.get()?.loadUrl(url)
     }
 
     fun onUrlObserved(url: String) {
@@ -110,12 +116,13 @@ class ArenaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun reload() {
-        activeWebView?.reload()
+        activeWebView?.get()?.reload()
     }
 
     fun goBack(): Boolean {
-        return if (activeWebView?.canGoBack() == true) {
-            activeWebView?.goBack()
+        val webView = activeWebView?.get()
+        return if (webView?.canGoBack() == true) {
+            webView.goBack()
             true
         } else {
             false
@@ -123,8 +130,9 @@ class ArenaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun goForward() {
-        if (activeWebView?.canGoForward() == true) {
-            activeWebView?.goForward()
+        val webView = activeWebView?.get()
+        if (webView?.canGoForward() == true) {
+            webView.goForward()
         }
     }
 
@@ -142,21 +150,34 @@ class ArenaViewModel(application: Application) : AndroidViewModel(application) {
                             document.querySelector('input[type="text"]') ||
                             document.querySelector('[contenteditable="true"]');
                 if (input) {
-                    if (input.tagName.toLowerCase() === 'textarea' || input.tagName.toLowerCase() === 'input') {
-                        input.value = "$sanitized";
+                    input.focus();
+                    if (input.tagName.toLowerCase() === 'textarea') {
+                        var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value');
+                        if (nativeSetter && nativeSetter.set) {
+                            nativeSetter.set.call(input, "$sanitized");
+                        } else {
+                            input.value = "$sanitized";
+                        }
                         input.dispatchEvent(new Event('input', { bubbles: true }));
                         input.dispatchEvent(new Event('change', { bubbles: true }));
-                        input.focus();
+                    } else if (input.tagName.toLowerCase() === 'input') {
+                        var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+                        if (nativeSetter && nativeSetter.set) {
+                            nativeSetter.set.call(input, "$sanitized");
+                        } else {
+                            input.value = "$sanitized";
+                        }
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                        input.dispatchEvent(new Event('change', { bubbles: true }));
                     } else {
                         input.innerText = "$sanitized";
                         input.dispatchEvent(new Event('input', { bubbles: true }));
-                        input.focus();
                     }
                 }
             })();
         """.trimIndent()
 
-        activeWebView?.evaluateJavascript(script, null)
+        activeWebView?.get()?.evaluateJavascript(script, null)
     }
 
     fun addCustomPrompt(title: String, category: String, content: String) {
@@ -207,8 +228,9 @@ class ArenaViewModel(application: Application) : AndroidViewModel(application) {
         cookieManager.removeAllCookies(null)
         cookieManager.flush()
         WebStorage.getInstance().deleteAllData()
-        activeWebView?.clearCache(true)
-        activeWebView?.clearHistory()
-        activeWebView?.loadUrl("https://arena.ai/")
+        val webView = activeWebView?.get()
+        webView?.clearCache(true)
+        webView?.clearHistory()
+        webView?.loadUrl("https://arena.ai/")
     }
 }

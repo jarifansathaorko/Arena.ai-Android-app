@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -63,7 +64,9 @@ fun ArenaTopBar(
                 IconButton(
                     onClick = onNavigateBack,
                     enabled = canGoBack,
-                    modifier = Modifier.size(36.dp)
+                    modifier = Modifier
+                        .size(40.dp)
+                        .testTag("nav_back_button")
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -75,7 +78,9 @@ fun ArenaTopBar(
                 IconButton(
                     onClick = onNavigateForward,
                     enabled = canGoForward,
-                    modifier = Modifier.size(36.dp)
+                    modifier = Modifier
+                        .size(40.dp)
+                        .testTag("nav_forward_button")
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowForward,
@@ -129,7 +134,12 @@ fun ArenaTopBar(
                 Spacer(modifier = Modifier.width(4.dp))
 
                 // Reload
-                IconButton(onClick = onReload, modifier = Modifier.size(36.dp)) {
+                IconButton(
+                    onClick = onReload,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .testTag("reload_button")
+                ) {
                     Icon(
                         imageVector = Icons.Default.Refresh,
                         contentDescription = "Reload Page",
@@ -138,7 +148,12 @@ fun ArenaTopBar(
                 }
 
                 // Desktop / Mobile Mode Toggle
-                IconButton(onClick = onToggleDesktop, modifier = Modifier.size(36.dp)) {
+                IconButton(
+                    onClick = onToggleDesktop,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .testTag("desktop_toggle_button")
+                ) {
                     Icon(
                         imageVector = if (isDesktopMode) Icons.Default.DesktopWindows else Icons.Default.Smartphone,
                         contentDescription = if (isDesktopMode) "Switch to Mobile View" else "Switch to Desktop View",
@@ -147,7 +162,12 @@ fun ArenaTopBar(
                 }
 
                 // Benchmark Prompts Sheet Action
-                IconButton(onClick = onOpenPrompts, modifier = Modifier.size(36.dp)) {
+                IconButton(
+                    onClick = onOpenPrompts,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .testTag("prompts_button")
+                ) {
                     Icon(
                         imageVector = Icons.Default.Lightbulb,
                         contentDescription = "Benchmark Prompts",
@@ -156,7 +176,12 @@ fun ArenaTopBar(
                 }
 
                 // Settings & Tools
-                IconButton(onClick = onOpenSettings, modifier = Modifier.size(36.dp)) {
+                IconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .testTag("settings_button")
+                ) {
                     Icon(
                         imageVector = Icons.Default.MoreVert,
                         contentDescription = "App Settings & Tools",
@@ -179,6 +204,7 @@ fun ArenaTopBar(
                 NavChip(
                     label = "⚔️ Arena Battle",
                     isSelected = isBattle,
+                    tag = "battle_nav_chip",
                     onClick = { onNavigateToUrl("https://arena.ai/") }
                 )
 
@@ -186,6 +212,7 @@ fun ArenaTopBar(
                 NavChip(
                     label = "🏆 Leaderboard",
                     isSelected = isLeaderboard,
+                    tag = "leaderboard_nav_chip",
                     onClick = { onNavigateToUrl("https://arena.ai/leaderboard") }
                 )
 
@@ -193,6 +220,7 @@ fun ArenaTopBar(
                 NavChip(
                     label = "📜 History",
                     isSelected = isHistory,
+                    tag = "history_nav_chip",
                     onClick = { onNavigateToUrl("https://arena.ai/history/search") }
                 )
 
@@ -200,6 +228,7 @@ fun ArenaTopBar(
                     label = "📝 Battle Log",
                     isSelected = false,
                     isSpecial = true,
+                    tag = "battle_log_nav_chip",
                     onClick = onOpenBattleTracker
                 )
 
@@ -207,6 +236,7 @@ fun ArenaTopBar(
                     label = "💡 Prompts Library",
                     isSelected = false,
                     isSpecial = true,
+                    tag = "prompts_lib_nav_chip",
                     onClick = onOpenPrompts
                 )
             }
@@ -231,6 +261,7 @@ private fun NavChip(
     label: String,
     isSelected: Boolean,
     isSpecial: Boolean = false,
+    tag: String = "",
     onClick: () -> Unit
 ) {
     val containerColor by animateColorAsState(
@@ -252,7 +283,9 @@ private fun NavChip(
         onClick = onClick,
         color = containerColor,
         shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.height(30.dp)
+        modifier = Modifier
+            .height(32.dp)
+            .then(if (tag.isNotEmpty()) Modifier.testTag(tag) else Modifier)
     ) {
         Box(
             contentAlignment = Alignment.Center,
