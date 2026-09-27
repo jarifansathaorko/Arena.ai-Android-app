@@ -1,7 +1,5 @@
 package com.example.ui.components
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -13,7 +11,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -21,8 +18,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.PromptItem
+import com.example.data.repository.ArenaRepository
 import com.example.ui.theme.ArenaPrimary
-import com.example.ui.theme.ArenaSecondary
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,31 +36,39 @@ fun PromptLibrarySheet(
     var selectedCategory by remember { mutableStateOf("All") }
     var searchQuery by remember { mutableStateOf("") }
     var showAddDialog by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    val categories = listOf("All", "⭐ Favorites", "Reasoning", "Coding", "Math", "Creative", "Factuality")
+    val categories = remember(prompts) {
+        listOf("All", "⭐ Favorites") + ArenaRepository.promptCategories(prompts)
+    }
+    LaunchedEffect(prompts) {
+        // A custom category may disappear after its last prompt is deleted;
+        // fall back to "All" instead of showing a stuck empty filter.
+        if (selectedCategory != "All" && selectedCategory != "⭐ Favorites" &&
+            prompts.none { it.category.equals(selectedCategory, ignoreCase = true) }
+        ) {
+            selectedCategory = "All"
+        }
+    }
 
     val filteredPrompts = remember(prompts, selectedCategory, searchQuery) {
-        prompts.filter { prompt ->
-            val matchesCategory = when (selectedCategory) {
-                "All" -> true
-                "⭐ Favorites" -> prompt.isFavorite
-                else -> prompt.category.equals(selectedCategory, ignoreCase = true)
-            }
-            val matchesSearch = searchQuery.isBlank() ||
-                    prompt.title.contains(searchQuery, ignoreCase = true) ||
-                    prompt.content.contains(searchQuery, ignoreCase = true)
-            matchesCategory && matchesSearch
-        }
+        ArenaRepository.filterPrompts(prompts, selectedCategory, searchQuery)
     }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        dragHandle = { BottomSheetDefaults.DragHandle() },
         containerColor = MaterialTheme.colorScheme.surface,
-        modifier = modifier.fillMaxHeight(0.85f)
+        modifier = modifier
+            .fillMaxHeight(0.9f)
+            .testTag("prompt_library_sheet")
+            .imePadding()
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .navigationBarsPadding()
                 .padding(horizontal = 16.dp)
         ) {
             // Header
@@ -123,7 +128,7 @@ fun PromptLibrarySheet(
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
                         IconButton(onClick = { searchQuery = "" }) {
-                            Icon(imageVector = Icons.Default.Clear, contentDescription = "Clear", modifier = Modifier.size(18.dp))
+                            Icon(imageVector = Icons.Default.Clear, contentDescription = "Clear search", modifier = Modifier.size(18.dp))
                         }
                     }
                 },
@@ -131,7 +136,7 @@ fun PromptLibrarySheet(
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp)
+                    .height(56.dp)
                     .testTag("search_prompt_input")
             )
 
@@ -155,7 +160,13 @@ fun PromptLibrarySheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = if (filteredPrompts.isEmpty()) "No prompts"
+                else "${filteredPrompts.size} prompt${if (filteredPrompts.size == 1) "" else "s"}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 10.dp, bottom = 2.dp)
+            )
 
             // Prompt List
             if (filteredPrompts.isEmpty()) {
@@ -174,19 +185,29 @@ fun PromptLibrarySheet(
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "No prompts found for '$selectedCategory'",
+                            text = if (searchQuery.isBlank()) "No prompts in '$selectedCategory'"
+                            else "No matches for \"$searchQuery\"",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        if (searchQuery.isNotBlank() || selectedCategory != "All") {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            TextButton(onClick = {
+                                searchQuery = ""
+                                selectedCategory = "All"
+                            }) {
+                                Text("Clear filters")
+                            }
+                        }
                     }
                 }
             } else {
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(bottom = 16.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
-                        .padding(bottom = 16.dp)
                 ) {
                     items(filteredPrompts, key = { it.id }) { prompt ->
                         PromptCard(
@@ -207,6 +228,9 @@ fun PromptLibrarySheet(
 
     if (showAddDialog) {
         AddPromptDialog(
+            categories = ArenaRepository.promptCategories(prompts).ifEmpty {
+                listOf("Reasoning", "Coding", "Math", "Creative", "Factuality")
+            },
             onDismiss = { showAddDialog = false },
             onConfirm = { title, cat, content ->
                 onAddPrompt(title, cat, content)
@@ -260,21 +284,27 @@ private fun PromptCard(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onToggleFavorite, modifier = Modifier.size(32.dp)) {
+                    IconButton(
+                        onClick = onToggleFavorite,
+                        modifier = Modifier.size(40.dp)
+                    ) {
                         Icon(
                             imageVector = if (prompt.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
-                            contentDescription = "Favorite",
+                            contentDescription = if (prompt.isFavorite) "Remove from favorites" else "Add to favorites",
                             tint = if (prompt.isFavorite) Color(0xFFFBBF24) else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                     if (prompt.isCustom) {
-                        IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier.size(40.dp)
+                        ) {
                             Icon(
                                 imageVector = Icons.Default.DeleteOutline,
-                                contentDescription = "Delete",
+                                contentDescription = "Delete custom prompt",
                                 tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
@@ -303,7 +333,7 @@ private fun PromptCard(
                     shape = RoundedCornerShape(8.dp),
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                     modifier = Modifier
-                        .height(34.dp)
+                        .height(36.dp)
                         .testTag("copy_prompt_button_${prompt.id}")
                 ) {
                     Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
@@ -319,7 +349,7 @@ private fun PromptCard(
                     colors = ButtonDefaults.buttonColors(containerColor = ArenaPrimary),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                     modifier = Modifier
-                        .height(34.dp)
+                        .height(36.dp)
                         .testTag("use_prompt_button_${prompt.id}")
                 ) {
                     Icon(imageVector = Icons.Default.Send, contentDescription = null, modifier = Modifier.size(14.dp))
@@ -333,14 +363,14 @@ private fun PromptCard(
 
 @Composable
 private fun AddPromptDialog(
+    categories: List<String>,
     onDismiss: () -> Unit,
     onConfirm: (title: String, category: String, content: String) -> Unit
 ) {
     var title by remember { mutableStateOf("") }
-    var category by remember { mutableStateOf("Reasoning") }
+    var category by remember(categories) { mutableStateOf(categories.firstOrNull() ?: "Reasoning") }
     var content by remember { mutableStateOf("") }
-
-    val categories = listOf("Reasoning", "Coding", "Math", "Creative", "Factuality", "Stress Test")
+    val canSave = title.isNotBlank() && content.isNotBlank()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -352,6 +382,7 @@ private fun AddPromptDialog(
                     onValueChange = { title = it },
                     label = { Text("Title (e.g. Tree Search, Python Hook)") },
                     singleLine = true,
+                    isError = title.isBlank(),
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -379,6 +410,10 @@ private fun AddPromptDialog(
                     label = { Text("Prompt Content") },
                     minLines = 3,
                     maxLines = 6,
+                    isError = content.isBlank(),
+                    supportingText = {
+                        Text("${content.length} characters")
+                    },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -386,11 +421,11 @@ private fun AddPromptDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    if (title.isNotBlank() && content.isNotBlank()) {
-                        onConfirm(title, category, content)
+                    if (canSave) {
+                        onConfirm(title.trim(), category, content.trim())
                     }
                 },
-                enabled = title.isNotBlank() && content.isNotBlank()
+                enabled = canSave
             ) {
                 Text("Save Prompt")
             }

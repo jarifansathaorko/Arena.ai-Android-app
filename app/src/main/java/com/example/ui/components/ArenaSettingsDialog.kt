@@ -1,11 +1,8 @@
 package com.example.ui.components
 
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.webkit.CookieManager
-import android.webkit.WebStorage
-import android.webkit.WebView
+import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -18,13 +15,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.ArenaDanger
 import com.example.ui.theme.ArenaPrimary
-import com.example.ui.theme.ArenaSecondary
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,15 +39,20 @@ fun ArenaSettingsDialog(
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     var showConfirmReset by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        dragHandle = { BottomSheetDefaults.DragHandle() },
         containerColor = MaterialTheme.colorScheme.surface,
-        modifier = modifier
+        modifier = modifier.testTag("settings_sheet")
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .navigationBarsPadding()
+                .imePadding()
                 .padding(horizontal = 20.dp, vertical = 8.dp)
                 .padding(bottom = 24.dp)
         ) {
@@ -86,7 +89,10 @@ fun ArenaSettingsDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
                             Icon(
                                 imageVector = if (isDesktopMode) Icons.Default.DesktopWindows else Icons.Default.Smartphone,
                                 contentDescription = null,
@@ -104,7 +110,8 @@ fun ArenaSettingsDialog(
                         }
                         Switch(
                             checked = isDesktopMode,
-                            onCheckedChange = { onToggleDesktop() }
+                            onCheckedChange = { onToggleDesktop() },
+                            modifier = Modifier.testTag("desktop_mode_switch")
                         )
                     }
 
@@ -147,6 +154,7 @@ fun ArenaSettingsDialog(
                         subtitle = currentUrl,
                         onClick = {
                             clipboardManager.setText(AnnotatedString(currentUrl))
+                            Toast.makeText(context, "Link copied to clipboard", Toast.LENGTH_SHORT).show()
                             onDismiss()
                         }
                     )
@@ -156,9 +164,13 @@ fun ArenaSettingsDialog(
                         title = "Open in External Browser",
                         subtitle = "Open in Chrome / Default Web Browser",
                         onClick = {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(currentUrl))
-                            context.startActivity(intent)
-                            onDismiss()
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(currentUrl))
+                                context.startActivity(intent)
+                                onDismiss()
+                            } catch (_: Exception) {
+                                Toast.makeText(context, "No browser app found", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     )
 
@@ -256,7 +268,8 @@ private fun SettingActionItem(
                     subtitle,
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
             Icon(

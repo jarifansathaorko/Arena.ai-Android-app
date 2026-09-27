@@ -1,12 +1,11 @@
 package com.example.ui.components
 
+import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -15,11 +14,17 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -27,6 +32,16 @@ import androidx.compose.ui.unit.sp
 import com.example.ui.theme.ArenaPrimary
 import com.example.ui.theme.ArenaSecondary
 import com.example.ui.theme.ArenaSuccess
+import com.example.ui.theme.ArenaWarning
+
+private data class QuickNav(
+    val label: String,
+    val icon: ImageVector,
+    val tag: String,
+    val isSelected: Boolean,
+    val isSpecial: Boolean = false,
+    val onClick: () -> Unit
+)
 
 @Composable
 fun ArenaTopBar(
@@ -46,6 +61,19 @@ fun ArenaTopBar(
     onNavigateToUrl: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val uri = remember(currentUrl) {
+        runCatching { Uri.parse(currentUrl) }.getOrNull()
+    }
+    val host = uri?.host?.removePrefix("www.") ?: "arena.ai"
+    val pathSuffix = remember(currentUrl) {
+        when {
+            currentUrl.contains("/leaderboard") -> " / leaderboard"
+            currentUrl.contains("/history") -> " / history"
+            else -> ""
+        }
+    }
+    val isSecure = currentUrl.startsWith("https://")
+
     Surface(
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = 3.dp,
@@ -58,14 +86,14 @@ fun ArenaTopBar(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                    .padding(horizontal = 4.dp, vertical = 4.dp)
             ) {
                 // Back & Forward navigation
                 IconButton(
                     onClick = onNavigateBack,
                     enabled = canGoBack,
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(44.dp)
                         .testTag("nav_back_button")
                 ) {
                     Icon(
@@ -79,7 +107,7 @@ fun ArenaTopBar(
                     onClick = onNavigateForward,
                     enabled = canGoForward,
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(44.dp)
                         .testTag("nav_forward_button")
                 ) {
                     Icon(
@@ -89,15 +117,16 @@ fun ArenaTopBar(
                     )
                 }
 
-                Spacer(modifier = Modifier.width(4.dp))
-
                 // Brand Pill + Active Path info
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .weight(1f)
-                        .height(38.dp)
+                        .heightIn(min = 40.dp)
+                        .semantics {
+                            contentDescription = "Current page: $pageTitle at $host$pathSuffix"
+                        }
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -105,24 +134,21 @@ fun ArenaTopBar(
                             .fillMaxSize()
                             .padding(horizontal = 10.dp)
                     ) {
-                        // SSL Lock
                         Icon(
-                            imageVector = Icons.Default.Lock,
-                            contentDescription = "Secure HTTPS",
-                            tint = ArenaSuccess,
+                            imageVector = if (isSecure) Icons.Default.Lock else Icons.Default.Warning,
+                            contentDescription = if (isSecure) "Secure HTTPS connection" else "Not a secure connection",
+                            tint = if (isSecure) ArenaSuccess else ArenaWarning,
                             modifier = Modifier.size(14.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "arena.ai",
+                            text = host,
                             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                             color = ArenaPrimary,
                             maxLines = 1
                         )
                         Text(
-                            text = if (currentUrl.contains("/leaderboard")) " / leaderboard"
-                            else if (currentUrl.contains("/history")) " / history"
-                            else "",
+                            text = pathSuffix,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
@@ -131,13 +157,11 @@ fun ArenaTopBar(
                     }
                 }
 
-                Spacer(modifier = Modifier.width(4.dp))
-
                 // Reload
                 IconButton(
                     onClick = onReload,
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(44.dp)
                         .testTag("reload_button")
                 ) {
                     Icon(
@@ -151,7 +175,7 @@ fun ArenaTopBar(
                 IconButton(
                     onClick = onToggleDesktop,
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(44.dp)
                         .testTag("desktop_toggle_button")
                 ) {
                     Icon(
@@ -165,7 +189,7 @@ fun ArenaTopBar(
                 IconButton(
                     onClick = onOpenPrompts,
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(44.dp)
                         .testTag("prompts_button")
                 ) {
                     Icon(
@@ -179,7 +203,7 @@ fun ArenaTopBar(
                 IconButton(
                     onClick = onOpenSettings,
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(44.dp)
                         .testTag("settings_button")
                 ) {
                     Icon(
@@ -190,58 +214,46 @@ fun ArenaTopBar(
                 }
             }
 
-            // Quick Navigation Chips
-            val scrollState = rememberScrollState()
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(scrollState)
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                val isBattle = currentUrl == "https://arena.ai" || currentUrl == "https://arena.ai/" || currentUrl.startsWith("https://arena.ai/?")
-                NavChip(
-                    label = "⚔️ Arena Battle",
-                    isSelected = isBattle,
-                    tag = "battle_nav_chip",
-                    onClick = { onNavigateToUrl("https://arena.ai/") }
-                )
-
+            // Quick Navigation Chips (lazy for cheap scroll + item recycling)
+            val navItems = remember(currentUrl) {
+                val isBattle = currentUrl == "https://arena.ai" ||
+                        currentUrl == "https://arena.ai/" ||
+                        currentUrl.startsWith("https://arena.ai/?")
                 val isLeaderboard = currentUrl.contains("/leaderboard")
-                NavChip(
-                    label = "🏆 Leaderboard",
-                    isSelected = isLeaderboard,
-                    tag = "leaderboard_nav_chip",
-                    onClick = { onNavigateToUrl("https://arena.ai/leaderboard") }
-                )
-
                 val isHistory = currentUrl.contains("/history")
-                NavChip(
-                    label = "📜 History",
-                    isSelected = isHistory,
-                    tag = "history_nav_chip",
-                    onClick = { onNavigateToUrl("https://arena.ai/history/search") }
-                )
-
-                NavChip(
-                    label = "📝 Battle Log",
-                    isSelected = false,
-                    isSpecial = true,
-                    tag = "battle_log_nav_chip",
-                    onClick = onOpenBattleTracker
-                )
-
-                NavChip(
-                    label = "💡 Prompts Library",
-                    isSelected = false,
-                    isSpecial = true,
-                    tag = "prompts_lib_nav_chip",
-                    onClick = onOpenPrompts
+                listOf(
+                    QuickNav("Arena Battle", Icons.Default.SportsMma, "battle_nav_chip", isBattle) {
+                        onNavigateToUrl("https://arena.ai/")
+                    },
+                    QuickNav("Leaderboard", Icons.Default.EmojiEvents, "leaderboard_nav_chip", isLeaderboard) {
+                        onNavigateToUrl("https://arena.ai/leaderboard")
+                    },
+                    QuickNav("History", Icons.Default.History, "history_nav_chip", isHistory) {
+                        onNavigateToUrl("https://arena.ai/history/search")
+                    },
+                    QuickNav("Battle Log", Icons.Default.EditNote, "battle_log_nav_chip", false, true, onOpenBattleTracker),
+                    QuickNav("Prompts Library", Icons.Default.Lightbulb, "prompts_lib_nav_chip", false, true, onOpenPrompts)
                 )
             }
+            LazyRow(
+                verticalAlignment = Alignment.CenterVertically,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(navItems, key = { it.tag }) { item ->
+                    NavChip(
+                        label = item.label,
+                        icon = item.icon,
+                        isSelected = item.isSelected,
+                        isSpecial = item.isSpecial,
+                        tag = item.tag,
+                        onClick = item.onClick
+                    )
+                }
+            }
 
-            // Progress bar
+            // Progress bar (throttled upstream in ViewModel.setProgress)
             AnimatedVisibility(visible = progress in 0.01f..0.99f) {
                 LinearProgressIndicator(
                     progress = { progress },
@@ -259,6 +271,7 @@ fun ArenaTopBar(
 @Composable
 private fun NavChip(
     label: String,
+    icon: ImageVector,
     isSelected: Boolean,
     isSpecial: Boolean = false,
     tag: String = "",
@@ -284,13 +297,22 @@ private fun NavChip(
         color = containerColor,
         shape = RoundedCornerShape(16.dp),
         modifier = Modifier
-            .height(32.dp)
+            .height(34.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .semantics { role = Role.Tab }
             .then(if (tag.isNotEmpty()) Modifier.testTag(tag) else Modifier)
     ) {
-        Box(
-            contentAlignment = Alignment.Center,
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 10.dp)
         ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
             Text(
                 text = label,
                 fontSize = 12.sp,

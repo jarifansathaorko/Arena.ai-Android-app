@@ -1,11 +1,12 @@
 package com.example.ui.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -13,12 +14,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.BattleRecord
 import com.example.data.model.BattleWinner
+import com.example.data.repository.ArenaRepository
 import com.example.ui.theme.ArenaDanger
 import com.example.ui.theme.ArenaPrimary
 import com.example.ui.theme.ArenaSuccess
@@ -38,15 +41,23 @@ fun BattleTrackerDialog(
 ) {
     var showAddForm by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) } // 0: History, 1: Win Stats
+    var showClearConfirm by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        dragHandle = { BottomSheetDefaults.DragHandle() },
         containerColor = MaterialTheme.colorScheme.surface,
-        modifier = modifier.fillMaxHeight(0.88f)
+        modifier = modifier
+            .fillMaxHeight(0.9f)
+            .testTag("battle_tracker_sheet")
+            .imePadding()
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .navigationBarsPadding()
                 .padding(horizontal = 16.dp)
         ) {
             // Header
@@ -55,7 +66,10 @@ fun BattleTrackerDialog(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Icon(
                         imageVector = Icons.Default.EmojiEvents,
                         contentDescription = null,
@@ -70,11 +84,20 @@ fun BattleTrackerDialog(
                     )
                 }
 
+                if (battles.isNotEmpty() && !showAddForm) {
+                    TextButton(
+                        onClick = { showClearConfirm = true },
+                        modifier = Modifier.testTag("clear_battles_button")
+                    ) {
+                        Text("Clear all", color = ArenaDanger, fontSize = 12.sp)
+                    }
+                }
                 Button(
                     onClick = { showAddForm = !showAddForm },
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = ArenaPrimary),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.testTag("record_battle_button")
                 ) {
                     Icon(
                         imageVector = if (showAddForm) Icons.Default.Close else Icons.Default.Add,
@@ -93,26 +116,6 @@ fun BattleTrackerDialog(
                 modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
             )
 
-            // Tabs: History vs Stats
-            TabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = Color.Transparent,
-                divider = {}
-            ) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = { Text("Battles (${battles.size})", fontWeight = FontWeight.SemiBold) }
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = { Text("Model Scorecard", fontWeight = FontWeight.SemiBold) }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
             if (showAddForm) {
                 AddBattleForm(
                     onSave = { mA, mB, win, topic, cat, notes ->
@@ -122,16 +125,67 @@ fun BattleTrackerDialog(
                     onCancel = { showAddForm = false }
                 )
             } else {
+                // Tabs: History vs Stats
+                TabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor = Color.Transparent,
+                    divider = {}
+                ) {
+                    Tab(
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        text = { Text("Battles (${battles.size})", fontWeight = FontWeight.SemiBold) }
+                    )
+                    Tab(
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        text = { Text("Model Scorecard", fontWeight = FontWeight.SemiBold) }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
                 when (selectedTab) {
                     0 -> BattleHistoryView(
                         battles = battles,
                         onDeleteBattle = onDeleteBattle,
-                        onClearAll = onClearAll
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
                     )
-                    1 -> ModelStatsView(battles = battles)
+                    1 -> ModelStatsView(
+                        battles = battles,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                    )
                 }
             }
         }
+    }
+
+    if (showClearConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirm = false },
+            title = { Text("Clear all battles?") },
+            text = { Text("This permanently deletes all ${battles.size} recorded battles. This cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onClearAll()
+                        showClearConfirm = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ArenaDanger)
+                ) {
+                    Text("Delete all")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearConfirm = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
@@ -149,6 +203,10 @@ private fun AddBattleForm(
 
     val categories = listOf("Reasoning", "Coding", "Math", "Creative", "Factuality", "General")
 
+    val duplicateModels = modelA.isNotBlank() && modelB.isNotBlank() &&
+            modelA.trim().equals(modelB.trim(), ignoreCase = true)
+    val canSave = modelA.isNotBlank() && modelB.isNotBlank() && !duplicateModels
+
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
@@ -156,7 +214,11 @@ private fun AddBattleForm(
             .fillMaxWidth()
             .padding(vertical = 8.dp)
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
+        Column(
+            modifier = Modifier
+                .padding(14.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
             Text("Record Revealed Models & Winner", fontWeight = FontWeight.Bold, fontSize = 14.sp)
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -164,16 +226,32 @@ private fun AddBattleForm(
                 OutlinedTextField(
                     value = modelA,
                     onValueChange = { modelA = it },
-                    label = { Text("Model A (e.g. Claude 3.5)") },
+                    label = { Text("Model A", fontSize = 12.sp) },
+                    placeholder = { Text("e.g. Claude 3.5", fontSize = 12.sp) },
                     singleLine = true,
-                    modifier = Modifier.weight(1f)
+                    isError = duplicateModels,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("battle_model_a_input")
                 )
                 OutlinedTextField(
                     value = modelB,
                     onValueChange = { modelB = it },
-                    label = { Text("Model B (e.g. GPT-4o)") },
+                    label = { Text("Model B", fontSize = 12.sp) },
+                    placeholder = { Text("e.g. GPT-4o", fontSize = 12.sp) },
                     singleLine = true,
-                    modifier = Modifier.weight(1f)
+                    isError = duplicateModels,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("battle_model_b_input")
+                )
+            }
+            if (duplicateModels) {
+                Text(
+                    text = "Model A and Model B must be different.",
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 4.dp)
                 )
             }
 
@@ -215,7 +293,8 @@ private fun AddBattleForm(
             OutlinedTextField(
                 value = topic,
                 onValueChange = { topic = it },
-                label = { Text("Prompt / Topic (e.g. Python Async Lock)") },
+                label = { Text("Prompt / Topic", fontSize = 12.sp) },
+                placeholder = { Text("e.g. Python Async Lock", fontSize = 12.sp) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -236,7 +315,7 @@ private fun AddBattleForm(
             OutlinedTextField(
                 value = notes,
                 onValueChange = { notes = it },
-                label = { Text("Comparison Notes (Optional)") },
+                label = { Text("Comparison Notes (Optional)", fontSize = 12.sp) },
                 minLines = 2,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -249,11 +328,15 @@ private fun AddBattleForm(
                 Spacer(modifier = Modifier.width(8.dp))
                 Button(
                     onClick = {
-                        if (modelA.isNotBlank() && modelB.isNotBlank()) {
-                            onSave(modelA, modelB, winner, topic, category, notes)
+                        if (canSave) {
+                            onSave(
+                                modelA.trim(), modelB.trim(), winner,
+                                topic.trim(), category, notes.trim()
+                            )
                         }
                     },
-                    enabled = modelA.isNotBlank() && modelB.isNotBlank()
+                    enabled = canSave,
+                    modifier = Modifier.testTag("save_battle_button")
                 ) {
                     Text("Save to Scorecard")
                 }
@@ -266,14 +349,12 @@ private fun AddBattleForm(
 private fun BattleHistoryView(
     battles: List<BattleRecord>,
     onDeleteBattle: (BattleRecord) -> Unit,
-    onClearAll: () -> Unit
+    modifier: Modifier = Modifier
 ) {
     if (battles.isEmpty()) {
         Box(
             contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.7f)
+            modifier = modifier
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
@@ -299,9 +380,8 @@ private fun BattleHistoryView(
     } else {
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 16.dp)
+            contentPadding = PaddingValues(bottom = 16.dp),
+            modifier = modifier
         ) {
             items(battles, key = { it.id }) { battle ->
                 BattleItemCard(battle = battle, onDelete = { onDeleteBattle(battle) })
@@ -347,10 +427,13 @@ private fun BattleItemCard(
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(36.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Close,
-                            contentDescription = "Delete",
+                            contentDescription = "Delete battle record",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(16.dp)
                         )
@@ -441,40 +524,26 @@ private fun BattleItemCard(
 }
 
 @Composable
-private fun ModelStatsView(battles: List<BattleRecord>) {
-    val stats = remember(battles) {
-        val modelCounts = mutableMapOf<String, Pair<Int, Int>>() // model -> (wins, total)
-        for (b in battles) {
-            val a = b.modelA.trim()
-            val bModel = b.modelB.trim()
-
-            val curA = modelCounts.getOrDefault(a, Pair(0, 0))
-            val curB = modelCounts.getOrDefault(bModel, Pair(0, 0))
-
-            val aWon = if (b.winner == BattleWinner.MODEL_A) 1 else 0
-            val bWon = if (b.winner == BattleWinner.MODEL_B) 1 else 0
-
-            modelCounts[a] = Pair(curA.first + aWon, curA.second + 1)
-            modelCounts[bModel] = Pair(curB.first + bWon, curB.second + 1)
-        }
-
-        modelCounts.entries.map { (name, pair) ->
-            val winRate = if (pair.second > 0) (pair.first.toFloat() / pair.second.toFloat()) * 100f else 0f
-            Triple(name, pair.first, pair.second) to winRate
-        }.sortedByDescending { it.second }
-    }
+private fun ModelStatsView(
+    battles: List<BattleRecord>,
+    modifier: Modifier = Modifier
+) {
+    val stats = remember(battles) { ArenaRepository.computeModelStats(battles) }
 
     if (stats.isEmpty()) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth().fillMaxHeight(0.6f)) {
-            Text("No statistics yet. Log battles to build your leaderboard!", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box(contentAlignment = Alignment.Center, modifier = modifier) {
+            Text(
+                "No statistics yet. Log battles to build your leaderboard!",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     } else {
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+            contentPadding = PaddingValues(bottom = 16.dp),
+            modifier = modifier
         ) {
-            items(stats) { (info, winRate) ->
-                val (name, wins, total) = info
+            items(stats, key = { it.modelName }) { stat ->
                 Card(
                     shape = RoundedCornerShape(10.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
@@ -486,8 +555,12 @@ private fun ModelStatsView(battles: List<BattleRecord>) {
                         modifier = Modifier.padding(12.dp).fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("$wins wins in $total battles", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stat.modelName, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                "${stat.wins} wins in ${stat.battles} battles",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
 
                         Surface(
@@ -495,7 +568,7 @@ private fun ModelStatsView(battles: List<BattleRecord>) {
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Text(
-                                text = "%.0f%% Win Rate".format(winRate),
+                                text = "%.0f%% Win Rate".format(stat.winRate),
                                 fontWeight = FontWeight.Bold,
                                 color = ArenaPrimary,
                                 fontSize = 13.sp,

@@ -12,6 +12,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.ArenaDanger
@@ -30,7 +33,10 @@ fun OfflineBanner(
     ) {
         Surface(
             color = ArenaDanger,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("offline_banner")
+                .semantics { contentDescription = "Offline: no internet connection" }
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,

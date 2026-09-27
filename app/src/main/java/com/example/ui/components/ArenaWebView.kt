@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -51,6 +52,9 @@ fun ArenaWebView(
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var hasError by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
+    // Tracks the last URL we programmatically loaded so recompositions
+    // (progress, title, rotation) never re-issue loadUrl() for it.
+    var lastLoadedUrl by remember { mutableStateOf<String?>(null) }
 
     // File chooser launcher for multimodal vision uploads on Arena.ai
     var filePathCallback by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
@@ -131,6 +135,10 @@ fun ArenaWebView(
                         allowFileAccess = true
                         allowContentAccess = true
                         mediaPlaybackRequiresUserGesture = false
+                        // Safe Browsing exists only on API 26+; guard for minSdk 24.
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            safeBrowsingEnabled = true
+                        }
 
                         // Text zoom
                         this.textZoom = textZoom
@@ -139,8 +147,7 @@ fun ArenaWebView(
                         userAgentString = if (isDesktopMode) {
                             DESKTOP_USER_AGENT
                         } else {
-                            // Default mobile chrome UA
-                            null
+                            WebSettings.getDefaultUserAgent(ctx)
                         }
                     }
 
@@ -167,6 +174,7 @@ fun ArenaWebView(
                                 type = "*/*"
                                 addCategory(Intent.CATEGORY_OPENABLE)
                             }
+                            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
 
                             try {
                                 filePickerLauncher.launch(intent)
@@ -182,14 +190,20 @@ fun ArenaWebView(
                         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                             super.onPageStarted(view, url, favicon)
                             hasError = false
-                            url?.let { onUrlChange(it) }
+                            url?.let {
+                                lastLoadedUrl = it
+                                onUrlChange(it)
+                            }
                             onCanGoBackChange(view?.canGoBack() == true)
                             onCanGoForwardChange(view?.canGoForward() == true)
                         }
 
                         override fun onPageFinished(view: WebView?, url: String?) {
                             super.onPageFinished(view, url)
-                            url?.let { onUrlChange(it) }
+                            url?.let {
+                                lastLoadedUrl = it
+                                onUrlChange(it)
+                            }
                             onCanGoBackChange(view?.canGoBack() == true)
                             onCanGoForwardChange(view?.canGoForward() == true)
                         }
@@ -200,7 +214,10 @@ fun ArenaWebView(
                             isReload: Boolean
                         ) {
                             super.doUpdateVisitedHistory(view, url, isReload)
-                            url?.let { onUrlChange(it) }
+                            url?.let {
+                                lastLoadedUrl = it
+                                onUrlChange(it)
+                            }
                             onCanGoBackChange(view?.canGoBack() == true)
                             onCanGoForwardChange(view?.canGoForward() == true)
                         }
@@ -249,30 +266,56 @@ fun ArenaWebView(
                             view: WebView?,
                             detail: RenderProcessGoneDetail?
                         ): Boolean {
-                            // Recover gracefully if render process is terminated
-                            if (detail?.didCrash() == false) {
-                                view?.destroy()
-                                return true
+                            // Returning true tells the framework we handled it,
+                            // so the app survives instead of crashing.
+                            if (detail?.didCrash() == true) {
+                                // Genuine renderer crash: don't blindly reload
+                                // (that risks a crash->reload loop). Surface the
+                                // error overlay so the user retries manually.
+                                hasError = true
+                                errorMessage =
+                                    "Arena's page renderer crashed. Your data is safe — tap retry to reload."
+                                onCanGoBackChange(false)
+                                onCanGoForwardChange(false)
+                            } else {
+                                // System killed the renderer for resources:
+                                // in-place reload is safe here.
+                                hasError = false
+                                errorMessage = ""
+                                view?.reload()
                             }
-                            return false
+                            return true
                         }
                     }
 
                     loadUrl(currentUrl)
+                    lastLoadedUrl = currentUrl
                     webViewRef = this
                     onWebViewCreated(this)
                 }
             },
             update = { webView ->
                 webViewRef = webView
-                // Update User Agent if desktop mode changed
-                val targetUA = if (isDesktopMode) DESKTOP_USER_AGENT else null
-                if (webView.settings.userAgentString != targetUA && targetUA != null) {
-                    webView.settings.userAgentString = targetUA
-                    webView.reload()
-                } else if (!isDesktopMode && webView.settings.userAgentString == DESKTOP_USER_AGENT) {
-                    webView.settings.userAgentString = null
-                    webView.reload()
+                // Sync programmatic navigation (quick chips, deep links, session
+                // reset). ViewModel.setUrl() only mutates state, so this is the
+                // single loadUrl() path: no competing duplicate loads. In-page
+                // SPA navigations already sync state via onUrlObserved, hence
+                // the webView.url check.
+                if (currentUrl.isNotBlank() && lastLoadedUrl != currentUrl && webView.url != currentUrl) {
+                    lastLoadedUrl = currentUrl
+                    webView.loadUrl(currentUrl)
+                } else {
+                    // Update User Agent if desktop mode changed
+                    val targetUA = if (isDesktopMode) DESKTOP_USER_AGENT else null
+                    if (webView.settings.userAgentString != targetUA && targetUA != null) {
+                        webView.settings.userAgentString = targetUA
+                        webView.reload()
+                    } else if (!isDesktopMode && webView.settings.userAgentString == DESKTOP_USER_AGENT) {
+                        // getDefaultUserAgent path: assigning an empty/default UA resets
+                        // to the system default instead of relying on null semantics.
+                        webView.settings.userAgentString = WebSettings.getDefaultUserAgent(context)
+                        webView.reload()
+                    }
                 }
 
                 // Update text zoom
@@ -297,7 +340,8 @@ fun ArenaWebView(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background),
+                    .background(MaterialTheme.colorScheme.background)
+                    .testTag("webview_error_overlay"),
                 contentAlignment = Alignment.Center
             ) {
                 Column(
@@ -330,7 +374,8 @@ fun ArenaWebView(
                             hasError = false
                             webViewRef?.reload()
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = ArenaPrimary)
+                        colors = ButtonDefaults.buttonColors(containerColor = ArenaPrimary),
+                        modifier = Modifier.testTag("webview_retry_button")
                     ) {
                         Icon(imageVector = Icons.Default.Refresh, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))

@@ -28,10 +28,12 @@ class ArenaRepository(
     }
 
     suspend fun addPrompt(title: String, category: String, content: String): Long {
+        require(title.isNotBlank()) { "Prompt title must not be blank" }
+        require(content.isNotBlank()) { "Prompt content must not be blank" }
         return promptDao.insertPrompt(
             PromptItem(
                 title = title.trim(),
-                category = category.trim(),
+                category = category.trim().ifBlank { "General" },
                 content = content.trim(),
                 isCustom = true
             )
@@ -54,13 +56,18 @@ class ArenaRepository(
         category: String,
         notes: String
     ): Long {
+        require(modelA.isNotBlank()) { "Model A must not be blank" }
+        require(modelB.isNotBlank()) { "Model B must not be blank" }
+        require(!modelA.trim().equals(modelB.trim(), ignoreCase = true)) {
+            "Model A and Model B must be different"
+        }
         return battleDao.insertBattle(
             BattleRecord(
                 modelA = modelA.trim(),
                 modelB = modelB.trim(),
                 winner = winner,
                 promptTopic = promptTopic.trim(),
-                category = category.trim(),
+                category = category.trim().ifBlank { "General" },
                 notes = notes.trim()
             )
         )
@@ -75,6 +82,65 @@ class ArenaRepository(
     }
 
     companion object {
+        /**
+         * Pure, testable aggregation of per-model win stats.
+         * Ties / "both bad" count as participations but not wins for either side.
+         * Empty or blank model names are skipped.
+         */
+        fun computeModelStats(battles: List<BattleRecord>): List<ModelStats> {
+            val wins = mutableMapOf<String, Int>()
+            val totals = mutableMapOf<String, Int>()
+            for (b in battles) {
+                val a = b.modelA.trim()
+                val other = b.modelB.trim()
+                if (a.isEmpty() || other.isEmpty()) continue
+                totals[a] = (totals[a] ?: 0) + 1
+                totals[other] = (totals[other] ?: 0) + 1
+                when (b.winner) {
+                    BattleWinner.MODEL_A -> wins[a] = (wins[a] ?: 0) + 1
+                    BattleWinner.MODEL_B -> wins[other] = (wins[other] ?: 0) + 1
+                    else -> Unit
+                }
+            }
+            return totals.map { (name, total) ->
+                val winCount = wins[name] ?: 0
+                ModelStats(
+                    modelName = name,
+                    wins = winCount,
+                    battles = total,
+                    winRate = if (total > 0) winCount.toFloat() / total.toFloat() * 100f else 0f
+                )
+            }.sortedByDescending { it.winRate }
+        }
+
+        /**
+         * Pure, testable prompt filtering used by the library sheet.
+         */
+        fun filterPrompts(
+            prompts: List<PromptItem>,
+            category: String,
+            query: String
+        ): List<PromptItem> {
+            val q = query.trim()
+            return prompts.filter { prompt ->
+                val matchesCategory = when (category) {
+                    "All" -> true
+                    "⭐ Favorites" -> prompt.isFavorite
+                    else -> prompt.category.equals(category, ignoreCase = true)
+                }
+                val matchesSearch = q.isEmpty() ||
+                        prompt.title.contains(q, ignoreCase = true) ||
+                        prompt.content.contains(q, ignoreCase = true)
+                matchesCategory && matchesSearch
+            }
+        }
+
+        /** Distinct categories present in [prompts], preserving a stable order. */
+        fun promptCategories(prompts: List<PromptItem>): List<String> {
+            val preferred = listOf("Reasoning", "Coding", "Math", "Creative", "Factuality", "Stress Test", "General")
+            val present = prompts.map { it.category }.distinct()
+            return preferred.filter { it in present } + (present - preferred.toSet()).sorted()
+        }
         val DEFAULT_PROMPTS = listOf(
             // Reasoning
             PromptItem(
