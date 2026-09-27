@@ -1,0 +1,6 @@
+{
+  "name": "Arena AI",
+  "description": "Battle, evaluate, and explore state-of-the-art AI models with Chatbot Arena leaderboard, side-by-side comparisons, and benchmark testing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

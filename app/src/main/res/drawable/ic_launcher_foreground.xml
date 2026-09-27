@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:pivotX="54"
+        android:pivotY="54">
+        <!-- Hexagonal Arena Base Shield in Safe Zone -->
+        <path
+            android:fillColor="#1A6366F1"
+            android:strokeColor="#818CF8"
+            android:strokeWidth="2.5"
+            android:pathData="M54,26 L76,38 L76,64 L54,78 L32,64 L32,38 Z" />
+
+        <!-- First Sword (Top-left to bottom-right) -->
+        <path
+            android:fillColor="#60A5FA"
+            android:pathData="M37,33 L41,30 L69,67 L66,70 Z" />
+        <path
+            android:fillColor="#93C5FD"
+            android:pathData="M39,31 L40,30 L68,68 L67,69 Z" />
+        <!-- Sword 1 Guard and Hilt -->
+        <path
+            android:fillColor="#CBD5E1"
+            android:pathData="M64,62 L74,70 L72,72 L62,64 Z" />
+        <path
+            android:fillColor="#E2E8F0"
+            android:pathData="M70,69 L74,75 L71,77 L67,71 Z" />
+        <!-- Sword 1 Pommel -->
+        <path
+            android:fillColor="#F59E0B"
+            android:pathData="M74,75 A2.5,2.5 0 1 1 73.99,75" />
+
+        <!-- Second Sword (Top-right to bottom-left) -->
+        <path
+            android:fillColor="#F43F5E"
+            android:pathData="M71,33 L67,30 L39,67 L42,70 Z" />
+        <path
+            android:fillColor="#FDA4AF"
+            android:pathData="M69,31 L68,30 L40,68 L41,69 Z" />
+        <!-- Sword 2 Guard and Hilt -->
+        <path
+            android:fillColor="#CBD5E1"
+            android:pathData="M44,62 L34,70 L36,72 L46,64 Z" />
+        <path
+            android:fillColor="#E2E8F0"
+            android:pathData="M38,69 L34,75 L37,77 L41,71 Z" />
+        <!-- Sword 2 Pommel -->
+        <path
+            android:fillColor="#F59E0B"
+            android:pathData="M34,75 A2.5,2.5 0 1 1 33.99,75" />
+
+        <!-- Central AI Spark / Star Core -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M54,45 C54,50 50,54 45,54 C50,54 54,58 54,63 C54,58 58,54 63,54 C58,54 54,50 54,45 Z" />
+
+        <!-- Glowing Core Center -->
+        <path
+            android:fillColor="#38BDF8"
+            android:pathData="M54,51 A3,3 0 1 1 53.99,51" />
+    </group>
+</vector>
